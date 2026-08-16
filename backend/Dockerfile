@@ -9,8 +9,7 @@ RUN npm install
 # Copy source
 COPY . .
 
-# Generate drizzle client and build
-RUN npm run db:generate
+# Build backend
 RUN npm run build
 
 # Expose port
