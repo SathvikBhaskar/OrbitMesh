@@ -1,0 +1,925 @@
+{
+  "id": "b32e3930-3d27-4724-a483-5516386d3d80",
+  "prevId": "283e8748-8fee-4a47-92be-54e5a16a2b40",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.contact_windows": {
+      "name": "contact_windows",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "satellite_id": {
+          "name": "satellite_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ground_station_id": {
+          "name": "ground_station_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "orbital_data_id": {
+          "name": "orbital_data_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "aos": {
+          "name": "aos",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "los": {
+          "name": "los",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "duration_seconds": {
+          "name": "duration_seconds",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "max_elevation_deg": {
+          "name": "max_elevation_deg",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "contact_windows_satellite_id_satellites_id_fk": {
+          "name": "contact_windows_satellite_id_satellites_id_fk",
+          "tableFrom": "contact_windows",
+          "tableTo": "satellites",
+          "columnsFrom": [
+            "satellite_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "contact_windows_ground_station_id_ground_stations_id_fk": {
+          "name": "contact_windows_ground_station_id_ground_stations_id_fk",
+          "tableFrom": "contact_windows",
+          "tableTo": "ground_stations",
+          "columnsFrom": [
+            "ground_station_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "contact_windows_orbital_sat_fk": {
+          "name": "contact_windows_orbital_sat_fk",
+          "tableFrom": "contact_windows",
+          "tableTo": "satellite_orbital_data",
+          "columnsFrom": [
+            "orbital_data_id",
+            "satellite_id"
+          ],
+          "columnsTo": [
+            "id",
+            "satellite_id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "contact_windows_id_station_sat_aos_los_unique": {
+          "name": "contact_windows_id_station_sat_aos_los_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "id",
+            "ground_station_id",
+            "satellite_id",
+            "aos",
+            "los"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "aos_los_check": {
+          "name": "aos_los_check",
+          "value": "\"contact_windows\".\"aos\" < \"contact_windows\".\"los\""
+        },
+        "duration_check": {
+          "name": "duration_check",
+          "value": "\"contact_windows\".\"duration_seconds\" > 0"
+        },
+        "duration_math_check": {
+          "name": "duration_math_check",
+          "value": "(\"contact_windows\".\"duration_seconds\")::numeric = EXTRACT(EPOCH FROM (\"contact_windows\".\"los\" - \"contact_windows\".\"aos\"))"
+        },
+        "max_elevation_check": {
+          "name": "max_elevation_check",
+          "value": "\"contact_windows\".\"max_elevation_deg\" >= 0 AND \"contact_windows\".\"max_elevation_deg\" <= 90"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.ground_stations": {
+      "name": "ground_stations",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "code": {
+          "name": "code",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "latitude": {
+          "name": "latitude",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "longitude": {
+          "name": "longitude",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "altitude_m": {
+          "name": "altitude_m",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "minimum_elevation_deg": {
+          "name": "minimum_elevation_deg",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "ground_station_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "ground_stations_code_unique": {
+          "name": "ground_stations_code_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "code"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "latitude_check": {
+          "name": "latitude_check",
+          "value": "\"ground_stations\".\"latitude\" >= -90 AND \"ground_stations\".\"latitude\" <= 90"
+        },
+        "longitude_check": {
+          "name": "longitude_check",
+          "value": "\"ground_stations\".\"longitude\" >= -180 AND \"ground_stations\".\"longitude\" <= 180"
+        },
+        "elevation_check": {
+          "name": "elevation_check",
+          "value": "\"ground_stations\".\"minimum_elevation_deg\" >= 0 AND \"ground_stations\".\"minimum_elevation_deg\" <= 90"
+        },
+        "altitude_check": {
+          "name": "altitude_check",
+          "value": "\"ground_stations\".\"altitude_m\" >= -500 AND \"ground_stations\".\"altitude_m\" <= 10000"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.mission_tasks": {
+      "name": "mission_tasks",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "satellite_id": {
+          "name": "satellite_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "priority": {
+          "name": "priority",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "duration_seconds": {
+          "name": "duration_seconds",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "deadline": {
+          "name": "deadline",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "mission_task_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "satellite_id_idx": {
+          "name": "satellite_id_idx",
+          "columns": [
+            {
+              "expression": "satellite_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "mission_tasks_satellite_id_satellites_id_fk": {
+          "name": "mission_tasks_satellite_id_satellites_id_fk",
+          "tableFrom": "mission_tasks",
+          "tableTo": "satellites",
+          "columnsFrom": [
+            "satellite_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "mission_tasks_id_sat_dur_unique": {
+          "name": "mission_tasks_id_sat_dur_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "id",
+            "satellite_id",
+            "duration_seconds"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "priority_check": {
+          "name": "priority_check",
+          "value": "\"mission_tasks\".\"priority\" >= 1 AND \"mission_tasks\".\"priority\" <= 10"
+        },
+        "duration_check": {
+          "name": "duration_check",
+          "value": "\"mission_tasks\".\"duration_seconds\" > 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.reservations": {
+      "name": "reservations",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "mission_task_id": {
+          "name": "mission_task_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "contact_window_id": {
+          "name": "contact_window_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ground_station_id": {
+          "name": "ground_station_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "satellite_id": {
+          "name": "satellite_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "window_aos": {
+          "name": "window_aos",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "window_los": {
+          "name": "window_los",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "task_duration_seconds": {
+          "name": "task_duration_seconds",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "allocated_start": {
+          "name": "allocated_start",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "allocated_end": {
+          "name": "allocated_end",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "reservation_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'PENDING'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "one_active_reservation_per_task": {
+          "name": "one_active_reservation_per_task",
+          "columns": [
+            {
+              "expression": "mission_task_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "status IN ('PENDING', 'CONFIRMED')",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "reservations_mission_task_fk": {
+          "name": "reservations_mission_task_fk",
+          "tableFrom": "reservations",
+          "tableTo": "mission_tasks",
+          "columnsFrom": [
+            "mission_task_id",
+            "satellite_id",
+            "task_duration_seconds"
+          ],
+          "columnsTo": [
+            "id",
+            "satellite_id",
+            "duration_seconds"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "reservations_contact_window_fk": {
+          "name": "reservations_contact_window_fk",
+          "tableFrom": "reservations",
+          "tableTo": "contact_windows",
+          "columnsFrom": [
+            "contact_window_id",
+            "ground_station_id",
+            "satellite_id",
+            "window_aos",
+            "window_los"
+          ],
+          "columnsTo": [
+            "id",
+            "ground_station_id",
+            "satellite_id",
+            "aos",
+            "los"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "allocated_time_check": {
+          "name": "allocated_time_check",
+          "value": "\"reservations\".\"allocated_start\" < \"reservations\".\"allocated_end\""
+        },
+        "inside_window_check": {
+          "name": "inside_window_check",
+          "value": "\"reservations\".\"allocated_start\" >= \"reservations\".\"window_aos\" AND \"reservations\".\"allocated_end\" <= \"reservations\".\"window_los\""
+        },
+        "duration_match_check": {
+          "name": "duration_match_check",
+          "value": "(\"reservations\".\"task_duration_seconds\")::numeric = EXTRACT(EPOCH FROM (\"reservations\".\"allocated_end\" - \"reservations\".\"allocated_start\"))"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.satellite_orbital_data": {
+      "name": "satellite_orbital_data",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "satellite_id": {
+          "name": "satellite_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source": {
+          "name": "source",
+          "type": "orbital_data_source",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tle_line1": {
+          "name": "tle_line1",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tle_line2": {
+          "name": "tle_line2",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tle_epoch": {
+          "name": "tle_epoch",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "received_at": {
+          "name": "received_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "satellite_orbital_data_satellite_id_satellites_id_fk": {
+          "name": "satellite_orbital_data_satellite_id_satellites_id_fk",
+          "tableFrom": "satellite_orbital_data",
+          "tableTo": "satellites",
+          "columnsFrom": [
+            "satellite_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "satellite_orbital_data_id_sat_unique": {
+          "name": "satellite_orbital_data_id_sat_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "id",
+            "satellite_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.satellites": {
+      "name": "satellites",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "norad_id": {
+          "name": "norad_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "satellite_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "satellites_norad_id_unique": {
+          "name": "satellites_norad_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "norad_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "norad_id_check": {
+          "name": "norad_id_check",
+          "value": "\"satellites\".\"norad_id\" > 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.scheduler_runs": {
+      "name": "scheduler_runs",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "run_type": {
+          "name": "run_type",
+          "type": "run_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "completed_at": {
+          "name": "completed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reference_time": {
+          "name": "reference_time",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "selected_policy": {
+          "name": "selected_policy",
+          "type": "varchar(50)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "selection_reason": {
+          "name": "selection_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "selector_version": {
+          "name": "selector_version",
+          "type": "varchar(50)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "task_count": {
+          "name": "task_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "total_task_demand_seconds": {
+          "name": "total_task_demand_seconds",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "usable_capacity_seconds": {
+          "name": "usable_capacity_seconds",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "load_pressure": {
+          "name": "load_pressure",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "median_deadline_pressure": {
+          "name": "median_deadline_pressure",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "p10_deadline_pressure": {
+          "name": "p10_deadline_pressure",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "tight_task_fraction": {
+          "name": "tight_task_fraction",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "high_priority_fraction": {
+          "name": "high_priority_fraction",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "mean_gap_seconds": {
+          "name": "mean_gap_seconds",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "largest_gap_seconds": {
+          "name": "largest_gap_seconds",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "fragmentation_pressure": {
+          "name": "fragmentation_pressure",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "scheduled_count": {
+          "name": "scheduled_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "unscheduled_count": {
+          "name": "unscheduled_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "execution_status": {
+          "name": "execution_status",
+          "type": "execution_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "error_message": {
+          "name": "error_message",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {
+    "public.execution_status": {
+      "name": "execution_status",
+      "schema": "public",
+      "values": [
+        "SUCCESS",
+        "FAILED_FEATURE_EXTRACTION",
+        "FAILED_EXECUTION",
+        "PARTIAL"
+      ]
+    },
+    "public.ground_station_status": {
+      "name": "ground_station_status",
+      "schema": "public",
+      "values": [
+        "AVAILABLE",
+        "OFFLINE",
+        "MAINTENANCE"
+      ]
+    },
+    "public.mission_task_status": {
+      "name": "mission_task_status",
+      "schema": "public",
+      "values": [
+        "PENDING",
+        "SCHEDULED",
+        "COMPLETED",
+        "CANCELLED",
+        "FAILED"
+      ]
+    },
+    "public.orbital_data_source": {
+      "name": "orbital_data_source",
+      "schema": "public",
+      "values": [
+        "CELESTRAK"
+      ]
+    },
+    "public.reservation_status": {
+      "name": "reservation_status",
+      "schema": "public",
+      "values": [
+        "PENDING",
+        "CONFIRMED",
+        "CANCELLED",
+        "COMPLETED",
+        "FAILED"
+      ]
+    },
+    "public.run_type": {
+      "name": "run_type",
+      "schema": "public",
+      "values": [
+        "PRODUCTION",
+        "LAB"
+      ]
+    },
+    "public.satellite_status": {
+      "name": "satellite_status",
+      "schema": "public",
+      "values": [
+        "ACTIVE",
+        "INACTIVE"
+      ]
+    }
+  },
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}
