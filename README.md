@@ -82,24 +82,33 @@ OrbitMesh utilizes a multi-objective greedy reservation system. While it current
 
 ## Experiments & Results
 
-The system was validated using a frozen experimental sandbox (`Scheduler Lab`).
+The system was validated using a frozen experimental sandbox (`Scheduler Lab`). 
 
 ### Final validation
 
 ```text
-540 workloads
-2,160 policy evaluations
-100% fingerprint reproducibility
+540 workload configurations
+  × 4 policy evaluations (FCFS, Priority, Hybrid Slack, Meta)
+-----------------------------------
+= 2,160 total policy runs
+```
 
-Meta-Scheduler:
+*Note: The Meta-Scheduler's decision space currently contains only `FCFS` and `Priority`. The `Hybrid Slack` policy was included as an experimental baseline for comparison.*
 
+**100% fingerprint reproducibility** was verified across the holdout validation.
+
+**Meta-Scheduler Performance:**
+
+```text
 Scheduled:          68.1%
 Weighted success:   73.0%
 Deadline misses:     0.2%
 P95 wait:         14,118 s
+```
 
-Oracle regret:
+**Oracle Regret:**
 
+```text
 Deadline misses:     0.07%
 Throughput:           2.39%
 Weighted success:     0.36%
