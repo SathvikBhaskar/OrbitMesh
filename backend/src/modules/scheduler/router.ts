@@ -4,6 +4,7 @@ import { CandidateService } from "./candidate-service";
 import { FcfsScheduler } from "./fcfs-scheduler";
 import { PriorityScheduler } from "./priority-scheduler";
 import { UrgencyScheduler } from "./urgency-scheduler";
+import { HybridScoringScheduler } from "./hybrid-scoring-scheduler";
 import { MetaScheduler } from "../meta-scheduler/meta-scheduler";
 
 import { db } from "../../db/client";
@@ -17,6 +18,7 @@ const candidateService = new CandidateService();
 const fcfsScheduler = new FcfsScheduler(candidateService);
 const priorityScheduler = new PriorityScheduler(candidateService);
 const urgencyScheduler = new UrgencyScheduler(candidateService);
+const hybridScheduler = new HybridScoringScheduler(candidateService);
 
 // We instantiate MetaScheduler with the PRODUCTION runType
 const metaScheduler = new MetaScheduler(candidateService, "PRODUCTION");
@@ -42,6 +44,15 @@ schedulerRouter.post("/priority/run", async (req, res, next) => {
 schedulerRouter.post("/urgency/run", authorize(["OPERATOR", "ADMIN"]), async (req, res, next) => {
   try {
     const result = await urgencyScheduler.schedulePendingTasks();
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+schedulerRouter.post("/hybrid/run", authorize(["OPERATOR", "ADMIN"]), async (req, res, next) => {
+  try {
+    const result = await hybridScheduler.schedulePendingTasks();
     res.json(result);
   } catch (err) {
     next(err);

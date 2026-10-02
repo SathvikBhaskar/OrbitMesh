@@ -4,6 +4,8 @@ import { eq, inArray, sql } from "drizzle-orm";
 import { MetaScheduler } from "../meta-scheduler/meta-scheduler";
 import { CandidateService } from "./candidate-service";
 import { UrgencyScheduler } from "./urgency-scheduler";
+import { HybridScoringScheduler } from "./hybrid-scoring-scheduler";
+import { DEFAULT_HYBRID_WEIGHTS } from "./scoring";
 
 class PreviewRollback extends Error {
   constructor(public payload: any) {
@@ -49,6 +51,12 @@ export class SchedulerWrapperService {
           let scheduler: any;
           if (policy === "URGENCY") {
             scheduler = new UrgencyScheduler(this.candidateService);
+          } else if (policy === "HYBRID") {
+            scheduler = new HybridScoringScheduler(this.candidateService, new Date(), DEFAULT_HYBRID_WEIGHTS, "HYBRID");
+          } else if (policy === "PRIORITY") {
+            scheduler = new HybridScoringScheduler(this.candidateService, new Date(), DEFAULT_HYBRID_WEIGHTS, "PRIORITY");
+          } else if (policy === "FCFS") {
+            scheduler = new HybridScoringScheduler(this.candidateService, new Date(), DEFAULT_HYBRID_WEIGHTS, "FCFS");
           } else {
             scheduler = new MetaScheduler(this.candidateService, "PRODUCTION");
           }
@@ -82,12 +90,15 @@ export class SchedulerWrapperService {
 
     // 4. Construct response
     return {
+      policy: policy || "META",
       scheduleVersion: currentVersion,
       lockedReservations: lockedRes,
       proposedReservations: previewPayload.proposedReservations,
       changes: previewPayload.result.results.filter((r: any) => r.status === "SCHEDULED"),
       unchanged: [], // for now
-      unscheduled: previewPayload.result.results.filter((r: any) => r.status === "UNSCHEDULED")
+      unscheduled: previewPayload.result.results.filter((r: any) => r.status === "UNSCHEDULED"),
+      metrics: previewPayload.result.metrics,
+      scoreBreakdowns: previewPayload.result.scoreBreakdowns,
     };
   }
 

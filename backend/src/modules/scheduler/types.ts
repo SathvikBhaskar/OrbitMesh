@@ -2,6 +2,8 @@ export interface SchedulerResult {
   scheduled: number;
   unscheduled: number;
   results: TaskOutcome[];
+  metrics?: any;
+  scoreBreakdowns?: any[];
 }
 
 export interface TaskOutcome {
