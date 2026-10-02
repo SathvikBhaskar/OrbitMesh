@@ -13,11 +13,13 @@ import { eq } from "drizzle-orm";
 import { runSeed } from "../../db/seed";
 import { replanningRouter } from "./dynamic-replanning/router";
 import { operationalRouter } from "./operational-replanning/router";
+import { controlPlaneRouter } from "./event-control-plane/router";
 
 export const schedulerRouter = Router();
 
 schedulerRouter.use("/replanning", replanningRouter);
 schedulerRouter.use("/operational", operationalRouter);
+schedulerRouter.use("/control-plane", controlPlaneRouter);
 
 const candidateService = new CandidateService();
 const fcfsScheduler = new FcfsScheduler(candidateService);

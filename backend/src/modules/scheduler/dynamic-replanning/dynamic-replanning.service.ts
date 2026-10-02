@@ -19,6 +19,7 @@ export interface ReplanningRequest {
   policy?: "HYBRID" | "PRIORITY" | "FCFS" | "URGENCY" | undefined;
   userId: string;
   referenceTime?: Date | undefined;
+  skipVersionIncrement?: boolean | undefined;
 }
 
 export interface ReplanningResult {
@@ -213,23 +214,25 @@ export class DynamicReplanningService {
           }
         }
 
-        // Increment schedule version
-        await tx
-          .update(scheduleVersions)
-          .set({
-            version: currentVersion + 1,
-            updatedAt: new Date(),
-          })
-          .where(eq(scheduleVersions.version, currentVersion));
+        // Increment schedule version (unless orchestrated by a control plane batch)
+        if (!request.skipVersionIncrement) {
+          await tx
+            .update(scheduleVersions)
+            .set({
+              version: currentVersion + 1,
+              updatedAt: new Date(),
+            })
+            .where(eq(scheduleVersions.version, currentVersion));
 
-        // Audit log for schedule version advancement
-        await tx.insert(scheduleAuditLog).values({
-          userId: request.userId,
-          action: "COMMIT_SCHEDULE",
-          entityType: "SCHEDULE",
-          entityId: String(currentVersion + 1),
-          reason: `DYNAMIC_REPLANNING_${request.strategy}_${policy}`,
-        });
+          // Audit log for schedule version advancement
+          await tx.insert(scheduleAuditLog).values({
+            userId: request.userId,
+            action: "COMMIT_SCHEDULE",
+            entityType: "SCHEDULE",
+            entityId: String(currentVersion + 1),
+            reason: `DYNAMIC_REPLANNING_${request.strategy}_${policy}`,
+          });
+        }
       });
     });
 
@@ -239,7 +242,7 @@ export class DynamicReplanningService {
       strategy: request.strategy,
       policy,
       previousVersion: currentVersion,
-      newVersion: currentVersion + 1,
+      newVersion: request.skipVersionIncrement ? currentVersion : currentVersion + 1,
       impact,
       rescuedCount,
       unrescuableCount,

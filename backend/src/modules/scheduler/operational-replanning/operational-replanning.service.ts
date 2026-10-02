@@ -59,13 +59,13 @@ export class OperationalReplanningService {
 
     switch (event.type) {
       case "STATION_OUTAGE":
-        return await this.processStationOutage(event, vBefore, refTime, freezeHorizon, policy, options.userId);
+        return await this.processStationOutage(event, vBefore, refTime, freezeHorizon, policy, options.userId, options.skipVersionIncrement);
       case "TASK_PREEMPTION":
-        return await this.processTaskPreemption(event, vBefore, refTime, freezeHorizon, policy, options.userId);
+        return await this.processTaskPreemption(event, vBefore, refTime, freezeHorizon, policy, options.userId, options.skipVersionIncrement);
       case "STATION_RESTORED":
-        return await this.processStationRestored(event, vBefore, refTime, policy, options.userId);
+        return await this.processStationRestored(event, vBefore, refTime, policy, options.userId, options.skipVersionIncrement);
       case "CAPACITY_RELEASE":
-        return await this.processCapacityRelease(event, vBefore, refTime, policy, options.userId);
+        return await this.processCapacityRelease(event, vBefore, refTime, policy, options.userId, options.skipVersionIncrement);
       default:
         throw new Error(`Unsupported operational event type: ${(event as any).type}`);
     }
@@ -82,7 +82,8 @@ export class OperationalReplanningService {
     refTime: Date,
     freezeHorizon: number,
     policy: string,
-    userId: string
+    userId: string,
+    skipVersionIncrement?: boolean | undefined
   ): Promise<OperationalReplanningResult> {
     const outStart = new Date(event.outageStart);
     const outEnd = new Date(event.outageEnd);
@@ -226,7 +227,7 @@ export class OperationalReplanningService {
         }
 
         // Increment schedule version if any state change occurred
-        if (displacedIds.length > 0 || frozenBlocked.length > 0) {
+        if (!skipVersionIncrement && (displacedIds.length > 0 || frozenBlocked.length > 0)) {
           await tx
             .update(scheduleVersions)
             .set({ version: vBefore + 1, updatedAt: new Date() })
@@ -240,7 +241,7 @@ export class OperationalReplanningService {
     return {
       eventType: "STATION_OUTAGE",
       scheduleVersionBefore: vBefore,
-      scheduleVersionAfter: isNoOp ? vBefore : vBefore + 1,
+      scheduleVersionAfter: isNoOp || skipVersionIncrement ? vBefore : vBefore + 1,
       isNoOp,
       displacedReservationsCount: displacedIds.length,
       frozenBlockedCount: frozenBlockedIds.length,
@@ -265,7 +266,8 @@ export class OperationalReplanningService {
     refTime: Date,
     freezeHorizon: number,
     policy: string,
-    userId: string
+    userId: string,
+    skipVersionIncrement?: boolean | undefined
   ): Promise<OperationalReplanningResult> {
     // 1. Fetch high-priority task details
     const [highPriTask] = await db
@@ -287,15 +289,17 @@ export class OperationalReplanningService {
     const initialTry = await nonPreemptiveScheduler.schedulePendingTasks([highPriTask.id]);
     if (initialTry.scheduled === 1 && initialTry.results[0]?.status === "SCHEDULED") {
       const resId = initialTry.results[0].reservationId!;
-      await db
-        .update(scheduleVersions)
-        .set({ version: vBefore + 1, updatedAt: new Date() })
-        .where(eq(scheduleVersions.version, vBefore));
+      if (!skipVersionIncrement) {
+        await db
+          .update(scheduleVersions)
+          .set({ version: vBefore + 1, updatedAt: new Date() })
+          .where(eq(scheduleVersions.version, vBefore));
+      }
 
       return {
         eventType: "TASK_PREEMPTION",
         scheduleVersionBefore: vBefore,
-        scheduleVersionAfter: vBefore + 1,
+        scheduleVersionAfter: skipVersionIncrement ? vBefore : vBefore + 1,
         isNoOp: false,
         displacedReservationsCount: 0,
         frozenBlockedCount: 0,
@@ -529,17 +533,19 @@ export class OperationalReplanningService {
         }
 
         // Atomic schedule version increment
-        await tx
-          .update(scheduleVersions)
-          .set({ version: vBefore + 1, updatedAt: new Date() })
-          .where(eq(scheduleVersions.version, vBefore));
+        if (!skipVersionIncrement) {
+          await tx
+            .update(scheduleVersions)
+            .set({ version: vBefore + 1, updatedAt: new Date() })
+            .where(eq(scheduleVersions.version, vBefore));
+        }
       });
     });
 
     return {
       eventType: "TASK_PREEMPTION",
       scheduleVersionBefore: vBefore,
-      scheduleVersionAfter: vBefore + 1,
+      scheduleVersionAfter: skipVersionIncrement ? vBefore : vBefore + 1,
       isNoOp: false,
       displacedReservationsCount: 1,
       frozenBlockedCount: 0,
@@ -563,7 +569,8 @@ export class OperationalReplanningService {
     vBefore: number,
     refTime: Date,
     policy: string,
-    userId: string
+    userId: string,
+    skipVersionIncrement?: boolean | undefined
   ): Promise<OperationalReplanningResult> {
     const scheduler =
       policy === "URGENCY"
@@ -596,15 +603,17 @@ export class OperationalReplanningService {
       }
     }
 
-    await db
-      .update(scheduleVersions)
-      .set({ version: vBefore + 1, updatedAt: new Date() })
-      .where(eq(scheduleVersions.version, vBefore));
+    if (!skipVersionIncrement) {
+      await db
+        .update(scheduleVersions)
+        .set({ version: vBefore + 1, updatedAt: new Date() })
+        .where(eq(scheduleVersions.version, vBefore));
+    }
 
     return {
       eventType: "STATION_RESTORED",
       scheduleVersionBefore: vBefore,
-      scheduleVersionAfter: vBefore + 1,
+      scheduleVersionAfter: skipVersionIncrement ? vBefore : vBefore + 1,
       isNoOp: false,
       displacedReservationsCount: 0,
       frozenBlockedCount: 0,
@@ -627,7 +636,8 @@ export class OperationalReplanningService {
     vBefore: number,
     refTime: Date,
     policy: string,
-    userId: string
+    userId: string,
+    skipVersionIncrement?: boolean | undefined
   ): Promise<OperationalReplanningResult> {
     const [res] = await db
       .select()
@@ -679,15 +689,17 @@ export class OperationalReplanningService {
 
     const scheduleRes = await scheduler.schedulePendingTasks();
 
-    await db
-      .update(scheduleVersions)
-      .set({ version: vBefore + 1, updatedAt: new Date() })
-      .where(eq(scheduleVersions.version, vBefore));
+    if (!skipVersionIncrement) {
+      await db
+        .update(scheduleVersions)
+        .set({ version: vBefore + 1, updatedAt: new Date() })
+        .where(eq(scheduleVersions.version, vBefore));
+    }
 
     return {
       eventType: "CAPACITY_RELEASE",
       scheduleVersionBefore: vBefore,
-      scheduleVersionAfter: vBefore + 1,
+      scheduleVersionAfter: skipVersionIncrement ? vBefore : vBefore + 1,
       isNoOp: false,
       displacedReservationsCount: 1,
       frozenBlockedCount: 0,

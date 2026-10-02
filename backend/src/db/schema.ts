@@ -356,3 +356,44 @@ export const scheduleProposals = pgTable("schedule_proposals", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
 });
+
+export const operationalEventLedger = pgTable(
+  "operational_event_ledger",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    idempotencyKey: varchar("idempotency_key", { length: 255 }).notNull().unique(),
+    eventType: varchar("event_type", { length: 50 }).notNull(),
+    urgency: varchar("urgency", { length: 20 }).notNull().default("COALESCIBLE"),
+    payload: jsonb("payload").notNull(),
+    status: varchar("status", { length: 50 }).notNull().default("RECEIVED"),
+    batchId: uuid("batch_id"),
+    executionReceipt: jsonb("execution_receipt"),
+    error: text("error"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    idempotencyKeyIdx: uniqueIndex("operational_event_ledger_idempotency_key_idx").on(table.idempotencyKey),
+    statusIdx: index("operational_event_ledger_status_idx").on(table.status),
+    batchIdIdx: index("operational_event_ledger_batch_id_idx").on(table.batchId),
+  })
+);
+
+export const operationalBatches = pgTable(
+  "operational_batches",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    status: varchar("status", { length: 50 }).notNull().default("PROCESSING"),
+    scheduleVersionBefore: integer("schedule_version_before").notNull(),
+    scheduleVersionAfter: integer("schedule_version_after").notNull(),
+    eventCount: integer("event_count").notNull().default(0),
+    eventIds: jsonb("event_ids").notNull(),
+    summary: jsonb("summary"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (table) => ({
+    statusIdx: index("operational_batches_status_idx").on(table.status),
+  })
+);
+

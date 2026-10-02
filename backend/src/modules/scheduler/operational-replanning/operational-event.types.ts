@@ -14,6 +14,7 @@ export interface OperationalReplanningOptions {
   scoreHysteresisThreshold?: number | undefined; // Default: 0.05
   userId: string;
   policy?: "HYBRID" | "PRIORITY" | "FCFS" | "URGENCY" | undefined;
+  skipVersionIncrement?: boolean | undefined;
 }
 
 export interface StationOutageEvent {
