@@ -11,8 +11,11 @@ import { db } from "../../db/client";
 import { missionTasks, scheduleVersions } from "../../db/schema";
 import { eq } from "drizzle-orm";
 import { runSeed } from "../../db/seed";
+import { replanningRouter } from "./dynamic-replanning/router";
 
 export const schedulerRouter = Router();
+
+schedulerRouter.use("/replanning", replanningRouter);
 
 const candidateService = new CandidateService();
 const fcfsScheduler = new FcfsScheduler(candidateService);

@@ -1,24 +1,47 @@
 import { db } from "../../db/client";
-import { contactWindows, reservations } from "../../db/schema";
-import { eq, and, lt, gt, inArray, asc } from "drizzle-orm";
+import { contactWindows, reservations, satelliteOrbitalData } from "../../db/schema";
+import { eq, and, lt, gt, inArray, asc, desc } from "drizzle-orm";
 
 export class CandidateService {
   async findCandidateWindows(satelliteId: string, deadline: Date) {
+    const latestOrbital = await db
+      .select({ id: satelliteOrbitalData.id })
+      .from(satelliteOrbitalData)
+      .where(eq(satelliteOrbitalData.satelliteId, satelliteId))
+      .orderBy(desc(satelliteOrbitalData.tleEpoch))
+      .limit(1);
+
+    const conditions = [
+      eq(contactWindows.satelliteId, satelliteId),
+      lt(contactWindows.aos, deadline),
+    ];
+
+    if (latestOrbital[0]) {
+      conditions.push(eq(contactWindows.orbitalDataId, latestOrbital[0].id));
+    }
+
     return await db.select()
       .from(contactWindows)
-      .where(
-        and(
-          eq(contactWindows.satelliteId, satelliteId),
-          lt(contactWindows.aos, deadline)
-        )
-      )
+      .where(and(...conditions))
       .orderBy(asc(contactWindows.aos));
   }
 
   async hasAnyWindow(satelliteId: string): Promise<boolean> {
+    const latestOrbital = await db
+      .select({ id: satelliteOrbitalData.id })
+      .from(satelliteOrbitalData)
+      .where(eq(satelliteOrbitalData.satelliteId, satelliteId))
+      .orderBy(desc(satelliteOrbitalData.tleEpoch))
+      .limit(1);
+
+    const conditions = [eq(contactWindows.satelliteId, satelliteId)];
+    if (latestOrbital[0]) {
+      conditions.push(eq(contactWindows.orbitalDataId, latestOrbital[0].id));
+    }
+
     const res = await db.select({ id: contactWindows.id })
       .from(contactWindows)
-      .where(eq(contactWindows.satelliteId, satelliteId))
+      .where(and(...conditions))
       .limit(1);
     return res.length > 0;
   }

@@ -19,8 +19,8 @@
  */
 
 import { db, txContext } from "../../db/client";
-import { missionTasks, reservations, contactWindows, groundStations } from "../../db/schema";
-import { eq, and, ne, inArray } from "drizzle-orm";
+import { missionTasks, reservations, contactWindows, groundStations, satelliteOrbitalData } from "../../db/schema";
+import { eq, and, ne, inArray, desc } from "drizzle-orm";
 import { CandidateService } from "./candidate-service";
 import { SchedulerResult, TaskOutcome } from "./types";
 import { SchedulerPolicy } from "./hybrid-policy";
@@ -75,6 +75,19 @@ export class UrgencyScheduler implements SchedulerPolicy {
     const allWindows = await dbOrTx.select().from(contactWindows);
     const allStations = await dbOrTx.select().from(groundStations);
 
+    // Identify latest orbital data snapshot per satellite
+    const latestOrbitalSnapshots = await dbOrTx
+      .select({ id: satelliteOrbitalData.id, satelliteId: satelliteOrbitalData.satelliteId })
+      .from(satelliteOrbitalData)
+      .orderBy(desc(satelliteOrbitalData.tleEpoch));
+
+    const latestOdBySat = new Map<string, string>();
+    for (const snap of latestOrbitalSnapshots) {
+      if (!latestOdBySat.has(snap.satelliteId)) {
+        latestOdBySat.set(snap.satelliteId, snap.id);
+      }
+    }
+
     const groundStationsById = new Map<string, any>();
     for (const gs of allStations) {
       groundStationsById.set(gs.id, gs);
@@ -88,8 +101,9 @@ export class UrgencyScheduler implements SchedulerPolicy {
     }> = [];
 
     for (const task of pendingTasks) {
+      const latestOdId = latestOdBySat.get(task.satelliteId);
       const satelliteWindows = allWindows
-        .filter((w: any) => w.satelliteId === task.satelliteId)
+        .filter((w: any) => w.satelliteId === task.satelliteId && (!latestOdId || w.orbitalDataId === latestOdId))
         .sort((a: any, b: any) => a.aos.getTime() - b.aos.getTime());
 
       // Check if satellite has any windows at all in the database
