@@ -14,6 +14,7 @@ import {
   foreignKey,
   boolean,
   jsonb,
+  bigint,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
@@ -42,6 +43,26 @@ export const executionStatusEnum = pgEnum("execution_status", [
   "PARTIAL",
 ]);
 export const orbitalSyncStatus = pgEnum("orbital_sync_status", ["RUNNING", "SUCCESS", "FAILED", "SKIPPED"]);
+
+export const executionStateEnum = pgEnum("execution_state", [
+  "SCHEDULED",
+  "EXECUTION_READY",
+  "DISPATCHED",
+  "IN_PROGRESS",
+  "COMPLETED",
+  "PARTIAL",
+  "FAILED",
+]);
+
+export const executionFailureReasonEnum = pgEnum("execution_failure_reason", [
+  "DISPATCH_REJECTED",
+  "NO_AOS",
+  "GROUND_HARDWARE_FAULT",
+  "SATELLITE_UNAVAILABLE",
+  "EXECUTION_ABORTED",
+  "TIMEOUT",
+  "UNKNOWN",
+]);
 
 export const satellites = pgTable(
   "satellites",
@@ -121,6 +142,9 @@ export const missionTasks = pgTable(
     status: missionTaskStatusEnum("status").notNull(),
     requiredFrequencyBand: text("required_frequency_band").notNull().default("S_BAND"),
     minDataRateMbps: doublePrecision("min_data_rate_mbps").notNull().default(10.0),
+    targetBytes: bigint("target_bytes", { mode: "number" }).default(1000000000).notNull(),
+    fulfilledBytes: bigint("fulfilled_bytes", { mode: "number" }).default(0).notNull(),
+    remainingBytes: bigint("remaining_bytes", { mode: "number" }).default(1000000000).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -130,6 +154,10 @@ export const missionTasks = pgTable(
     durationCheck: check("duration_check", sql`${table.durationSeconds} > 0`),
     minDataRateCheck: check("min_data_rate_check", sql`${table.minDataRateMbps} > 0`),
     idSatDurationUnique: unique("mission_tasks_id_sat_dur_unique").on(table.id, table.satelliteId, table.durationSeconds),
+    bytesConsistencyCheck: check(
+      "mission_tasks_bytes_consistency_check",
+      sql`${table.fulfilledBytes} >= 0 AND ${table.fulfilledBytes} <= ${table.targetBytes} AND ${table.remainingBytes} = ${table.targetBytes} - ${table.fulfilledBytes}`
+    ),
   })
 );
 
@@ -231,6 +259,15 @@ export const reservations = pgTable(
     status: reservationStatusEnum("status").default("PENDING").notNull(),
     source: reservationSourceEnum("source").default("AUTOMATED").notNull(),
     locked: boolean("locked").default(false).notNull(),
+    executionState: executionStateEnum("execution_state").default("SCHEDULED").notNull(),
+    activeDispatchId: varchar("active_dispatch_id", { length: 64 }),
+    dispatchedAt: timestamp("dispatched_at", { withTimezone: true }),
+    dispatchAckAt: timestamp("dispatch_ack_at", { withTimezone: true }),
+    aosActual: timestamp("aos_actual", { withTimezone: true }),
+    losActual: timestamp("los_actual", { withTimezone: true }),
+    bytesTransferred: bigint("bytes_transferred", { mode: "number" }).default(0).notNull(),
+    failureReason: executionFailureReasonEnum("failure_reason"),
+    telemetryMetrics: jsonb("telemetry_metrics").default({}).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
@@ -251,6 +288,8 @@ export const reservations = pgTable(
     oneActiveReservationIdx: uniqueIndex("one_active_reservation_per_task")
       .on(table.missionTaskId)
       .where(sql`status IN ('PENDING', 'CONFIRMED')`),
+    executionStateIdx: index("reservations_execution_state_idx").on(table.executionState),
+    activeDispatchIdIdx: index("reservations_active_dispatch_id_idx").on(table.activeDispatchId),
   })
 );
 
@@ -396,4 +435,27 @@ export const operationalBatches = pgTable(
     statusIdx: index("operational_batches_status_idx").on(table.status),
   })
 );
+
+export const executionTelemetryEvents = pgTable(
+  "execution_telemetry_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    reservationId: uuid("reservation_id")
+      .notNull()
+      .references(() => reservations.id, { onDelete: "cascade" }),
+    dispatchId: varchar("dispatch_id", { length: 64 }).notNull(),
+    eventType: varchar("event_type", { length: 64 }).notNull(),
+    sequenceNumber: integer("sequence_number").notNull(),
+    sourceTimestamp: timestamp("source_timestamp", { withTimezone: true }).notNull(),
+    receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
+    idempotencyKey: varchar("idempotency_key", { length: 128 }).notNull().unique(),
+    payload: jsonb("payload").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    resDispatchIdx: index("execution_telemetry_events_res_dispatch_idx").on(table.reservationId, table.dispatchId),
+    resSeqIdx: index("execution_telemetry_events_res_seq_idx").on(table.reservationId, table.sequenceNumber),
+  })
+);
+
 

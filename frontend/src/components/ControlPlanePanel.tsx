@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../api/client';
 import { format } from 'date-fns';
-import { Activity, RefreshCw, AlertTriangle, CheckCircle, Clock, Zap, ArrowRight, Layers } from 'lucide-react';
+import { Activity, RefreshCw, AlertTriangle, CheckCircle, Clock, Zap, ArrowRight, Layers, Radio } from 'lucide-react';
 
 interface LedgerItem {
   id: string;
@@ -29,10 +29,13 @@ interface BatchItem {
 }
 
 export const ControlPlanePanel: React.FC = () => {
-  const [activeSubTab, setActiveSubTab] = useState<'ledger' | 'batches'>('batches');
+  const [activeSubTab, setActiveSubTab] = useState<'ledger' | 'batches' | 'contracts'>('batches');
   const [ledger, setLedger] = useState<LedgerItem[]>([]);
   const [batches, setBatches] = useState<BatchItem[]>([]);
+  const [contracts, setContracts] = useState<any[]>([]);
   const [selectedBatch, setSelectedBatch] = useState<any | null>(null);
+  const [selectedContract, setSelectedContract] = useState<any | null>(null);
+  const [loadingContract, setLoadingContract] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [retryingId, setRetryingId] = useState<string | null>(null);
@@ -42,12 +45,14 @@ export const ControlPlanePanel: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const [ledgerRes, batchesRes] = await Promise.all([
+      const [ledgerRes, batchesRes, resData] = await Promise.all([
         api.get('/scheduler/control-plane/ledger?limit=100'),
         api.get('/scheduler/control-plane/batches?limit=50'),
+        api.get('/reservations'),
       ]);
       setLedger(ledgerRes.ledger || []);
       setBatches(batchesRes.batches || []);
+      setContracts(resData || []);
     } catch (err: any) {
       console.error(err);
       setError(err.message || 'Unable to load control plane telemetry.');
@@ -82,6 +87,46 @@ export const ControlPlanePanel: React.FC = () => {
       alert(`Batch recovery failed: ${err.message}`);
     } finally {
       setRetryingId(null);
+    }
+  };
+
+  const handleInspectContract = async (reservationId: string) => {
+    setLoadingContract(true);
+    try {
+      const data = await api.get(`/execution/reservations/${reservationId}`);
+      setSelectedContract(data);
+    } catch (err: any) {
+      alert(`Failed to load execution contract audit: ${err.message}`);
+    } finally {
+      setLoadingContract(false);
+    }
+  };
+
+  const formatBytes = (bytes?: number | null) => {
+    if (bytes === undefined || bytes === null) return '0 B';
+    if (bytes >= 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+    if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${bytes} B`;
+  };
+
+  const getExecutionBadge = (state?: string) => {
+    switch (state) {
+      case 'COMPLETED':
+        return <span className="badge badge-success">COMPLETED</span>;
+      case 'IN_PROGRESS':
+        return <span className="badge" style={{ backgroundColor: 'rgba(34, 197, 94, 0.2)', color: '#4ade80' }}>● IN PROGRESS</span>;
+      case 'DISPATCHED':
+        return <span className="badge" style={{ backgroundColor: 'rgba(59, 130, 246, 0.2)', color: '#60a5fa' }}>DISPATCHED</span>;
+      case 'EXECUTION_READY':
+        return <span className="badge" style={{ backgroundColor: 'rgba(168, 85, 247, 0.2)', color: '#c084fc' }}>EXECUTION READY</span>;
+      case 'PARTIAL':
+        return <span className="badge" style={{ backgroundColor: 'rgba(234, 179, 8, 0.2)', color: '#facc15' }}>PARTIAL</span>;
+      case 'FAILED':
+        return <span className="badge badge-danger">FAILED</span>;
+      case 'SCHEDULED':
+      default:
+        return <span className="badge" style={{ backgroundColor: 'rgba(148, 163, 184, 0.2)', color: '#94a3b8' }}>SCHEDULED</span>;
     }
   };
 
@@ -146,6 +191,14 @@ export const ControlPlanePanel: React.FC = () => {
         >
           <Activity size={16} />
           Event Ledger ({ledger.length})
+        </button>
+        <button
+          className={`btn ${activeSubTab === 'contracts' ? 'btn-primary' : 'btn-outline'}`}
+          onClick={() => setActiveSubTab('contracts')}
+          style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+        >
+          <Radio size={16} />
+          Execution Contracts ({contracts.length})
         </button>
       </div>
 
@@ -301,6 +354,85 @@ export const ControlPlanePanel: React.FC = () => {
         </div>
       )}
 
+      {/* Execution Contracts View */}
+      {activeSubTab === 'contracts' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          {contracts.length === 0 ? (
+            <div className="glass-panel" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+              No execution contracts scheduled. Scheduled reservations will appear here with execution state.
+            </div>
+          ) : (
+            <div className="glass-panel" style={{ overflowX: 'auto', padding: 0 }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.875rem' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid var(--border-color)', color: 'var(--text-muted)' }}>
+                    <th style={{ padding: '0.75rem 1rem' }}>Reservation ID</th>
+                    <th style={{ padding: '0.75rem 1rem' }}>Satellite / Station</th>
+                    <th style={{ padding: '0.75rem 1rem' }}>Execution State</th>
+                    <th style={{ padding: '0.75rem 1rem' }}>Dispatch ID</th>
+                    <th style={{ padding: '0.75rem 1rem' }}>Pass Actuals</th>
+                    <th style={{ padding: '0.75rem 1rem' }}>Window AOS/LOS</th>
+                    <th style={{ padding: '0.75rem 1rem' }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {contracts.map((c) => (
+                    <tr key={c.id} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
+                      <td style={{ padding: '0.75rem 1rem' }} className="mono">
+                        {c.id.slice(0, 8)}...
+                      </td>
+                      <td style={{ padding: '0.75rem 1rem' }}>
+                        <div style={{ fontWeight: 500 }}>{c.satelliteName || c.satelliteId?.slice(0, 8)}</div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{c.groundStationName || c.groundStationId?.slice(0, 8)}</div>
+                      </td>
+                      <td style={{ padding: '0.75rem 1rem' }}>
+                        {getExecutionBadge(c.executionState)}
+                        {c.failureReason && (
+                          <div style={{ fontSize: '0.7rem', color: '#f87171', marginTop: '0.2rem' }}>
+                            {c.failureReason}
+                          </div>
+                        )}
+                      </td>
+                      <td style={{ padding: '0.75rem 1rem' }} className="mono" style={{ fontSize: '0.75rem' }}>
+                        {c.activeDispatchId ? (
+                          <span style={{ color: '#60a5fa' }}>{c.activeDispatchId}</span>
+                        ) : (
+                          <span style={{ color: 'var(--text-muted)' }}>—</span>
+                        )}
+                      </td>
+                      <td style={{ padding: '0.75rem 1rem' }}>
+                        <div className="mono" style={{ fontSize: '0.8rem', color: '#4ade80' }}>
+                          {formatBytes(c.bytesTransferred)}
+                        </div>
+                        {c.taskTargetBytes && (
+                          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                            of {formatBytes(c.taskTargetBytes)} target
+                          </div>
+                        )}
+                      </td>
+                      <td style={{ padding: '0.75rem 1rem', fontSize: '0.75rem' }} className="mono">
+                        <div>AOS: {format(new Date(c.allocatedStart), 'HH:mm:ss')}</div>
+                        <div style={{ color: 'var(--text-muted)' }}>LOS: {format(new Date(c.allocatedEnd), 'HH:mm:ss')}</div>
+                      </td>
+                      <td style={{ padding: '0.75rem 1rem' }}>
+                        <button
+                          className="btn btn-outline"
+                          style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
+                          onClick={() => handleInspectContract(c.id)}
+                          disabled={loadingContract}
+                        >
+                          Inspect Audit
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Batch Inspection Modal / Detail Drawer */}
       {selectedBatch && (
         <div
@@ -379,6 +511,119 @@ export const ControlPlanePanel: React.FC = () => {
                 >
                   {retryingId === selectedBatch.batch.id ? 'Retrying...' : 'Retry Batch Now'}
                 </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Contract Telemetry Audit Ledger Modal */}
+      {selectedContract && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.7)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+            padding: '2rem',
+          }}
+          onClick={() => setSelectedContract(null)}
+        >
+          <div
+            className="glass-panel"
+            style={{
+              maxWidth: '850px',
+              width: '100%',
+              maxHeight: '90vh',
+              overflowY: 'auto',
+              padding: '2rem',
+              backgroundColor: '#0f172a',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '1rem', marginBottom: '1rem' }}>
+              <div>
+                <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <Radio size={20} className="text-gradient" />
+                  <span>Execution Contract &amp; Telemetry Provenance</span>
+                </h3>
+                <span className="mono" style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                  Reservation {selectedContract.reservation.id}
+                </span>
+              </div>
+              <button className="btn btn-outline" onClick={() => setSelectedContract(null)}>Close</button>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', marginBottom: '1.5rem' }}>
+              <div className="glass-panel" style={{ padding: '0.75rem' }}>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Execution State</span>
+                <div style={{ marginTop: '0.25rem' }}>{getExecutionBadge(selectedContract.reservation.executionState)}</div>
+              </div>
+              <div className="glass-panel" style={{ padding: '0.75rem' }}>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Active Dispatch ID</span>
+                <div className="mono" style={{ marginTop: '0.25rem', fontSize: '0.85rem', color: '#60a5fa' }}>
+                  {selectedContract.reservation.activeDispatchId || 'None'}
+                </div>
+              </div>
+              <div className="glass-panel" style={{ padding: '0.75rem' }}>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Transferred Actuals</span>
+                <div className="mono" style={{ marginTop: '0.25rem', fontSize: '0.9rem', color: '#4ade80' }}>
+                  {formatBytes(selectedContract.reservation.bytesTransferred)}
+                </div>
+              </div>
+              <div className="glass-panel" style={{ padding: '0.75rem' }}>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Task Quota Remaining</span>
+                <div className="mono" style={{ marginTop: '0.25rem', fontSize: '0.9rem' }}>
+                  {formatBytes(selectedContract.missionTask?.remainingBytes)}
+                </div>
+              </div>
+            </div>
+
+            <h4 style={{ marginBottom: '0.75rem' }}>Authoritative Telemetry Ledger ({selectedContract.events?.length || 0} events)</h4>
+            {selectedContract.events?.length === 0 ? (
+              <div style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--text-muted)', background: 'rgba(255,255,255,0.02)', borderRadius: '4px' }}>
+                No physical telemetry events ingested yet for this contract.
+              </div>
+            ) : (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.8rem' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid var(--border-color)', color: 'var(--text-muted)' }}>
+                      <th style={{ padding: '0.5rem' }}>Seq #</th>
+                      <th style={{ padding: '0.5rem' }}>Event Type</th>
+                      <th style={{ padding: '0.5rem' }}>Dispatch ID</th>
+                      <th style={{ padding: '0.5rem' }}>Source Timestamp</th>
+                      <th style={{ padding: '0.5rem' }}>Idempotency Key</th>
+                      <th style={{ padding: '0.5rem' }}>Transferred</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selectedContract.events.map((evt: any) => (
+                      <tr key={evt.id} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
+                        <td style={{ padding: '0.5rem' }} className="mono">#{evt.sequenceNumber}</td>
+                        <td style={{ padding: '0.5rem' }}>
+                          <span className="badge" style={{ backgroundColor: 'rgba(255, 255, 255, 0.08)' }}>{evt.eventType}</span>
+                        </td>
+                        <td style={{ padding: '0.5rem' }} className="mono" style={{ color: '#60a5fa' }}>{evt.dispatchId}</td>
+                        <td style={{ padding: '0.5rem' }} className="mono" style={{ color: 'var(--text-muted)' }}>
+                          {format(new Date(evt.sourceTimestamp), 'HH:mm:ss.SSS')}
+                        </td>
+                        <td style={{ padding: '0.5rem' }} className="mono" style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                          {evt.idempotencyKey.slice(0, 16)}...
+                        </td>
+                        <td style={{ padding: '0.5rem' }} className="mono" style={{ color: '#4ade80' }}>
+                          {formatBytes(evt.payload?.bytesTransferred || 0)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
           </div>

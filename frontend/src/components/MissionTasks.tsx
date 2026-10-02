@@ -2,6 +2,14 @@ import React, { useEffect, useState } from 'react';
 import { api } from '../api/client';
 import { format } from 'date-fns';
 
+const formatBytes = (bytes?: number | null) => {
+  if (bytes === undefined || bytes === null) return '0 B';
+  if (bytes >= 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(0)} MB`;
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${bytes} B`;
+};
+
 export const MissionTasks = () => {
   const [tasks, setTasks] = useState<any[]>([]);
   const [satellites, setSatellites] = useState<any[]>([]);
@@ -20,6 +28,7 @@ export const MissionTasks = () => {
     description: '',
     priority: 3,
     durationSeconds: 300,
+    targetMb: 1000,
     deadline: '',
   });
   const [submitting, setSubmitting] = useState(false);
@@ -66,6 +75,7 @@ export const MissionTasks = () => {
         description: task.description || '',
         priority: task.priority,
         durationSeconds: task.durationSeconds,
+        targetMb: task.targetBytes ? Math.round(Number(task.targetBytes) / 1000000) : 1000,
         deadline: new Date(task.deadline).toISOString().slice(0, 16), // datetime-local format
       });
     } else {
@@ -76,6 +86,7 @@ export const MissionTasks = () => {
         description: '',
         priority: 3,
         durationSeconds: 300,
+        targetMb: 1000,
         deadline: new Date(Date.now() + 86400000).toISOString().slice(0, 16),
       });
     }
@@ -94,6 +105,7 @@ export const MissionTasks = () => {
     try {
       const payload = {
         ...formData,
+        targetBytes: (formData.targetMb || 1000) * 1000000,
         deadline: new Date(formData.deadline).toISOString(),
       };
       
@@ -168,16 +180,17 @@ export const MissionTasks = () => {
                 <th>Duration</th>
                 <th>Deadline</th>
                 <th>Priority</th>
+                <th>Data Quota</th>
                 <th>Status</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={8} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>Loading mission tasks...</td></tr>
+                <tr><td colSpan={9} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>Loading mission tasks...</td></tr>
               ) : filteredTasks.length === 0 ? (
                 <tr>
-                  <td colSpan={8} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
+                  <td colSpan={9} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
                     No mission tasks found.
                   </td>
                 </tr>
@@ -185,6 +198,10 @@ export const MissionTasks = () => {
                 filteredTasks.map((task: any) => {
                   const cancelled = task.status === 'CANCELLED';
                   const rowStyle = cancelled ? { opacity: 0.5, textDecoration: 'line-through' } : {};
+                  const targetBytes = task.targetBytes ? Number(task.targetBytes) : 1000000000;
+                  const fulfilledBytes = task.fulfilledBytes ? Number(task.fulfilledBytes) : 0;
+                  const percent = Math.min(100, Math.round((fulfilledBytes / targetBytes) * 100));
+
                   return (
                     <tr key={task.id} style={rowStyle}>
                       <td className="mono" style={{ fontSize: '0.875rem' }}>{task.id.slice(0, 8)}</td>
@@ -194,6 +211,21 @@ export const MissionTasks = () => {
                       <td className="mono">{format(new Date(task.deadline), 'HH:mm:ss')}</td>
                       <td>
                         <span className="badge badge-priority">P{task.priority}</span>
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', minWidth: '130px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem' }} className="mono">
+                            <span>{formatBytes(fulfilledBytes)} / {formatBytes(targetBytes)}</span>
+                            <span style={{ color: percent >= 100 ? 'var(--success)' : 'var(--text-muted)' }}>{percent}%</span>
+                          </div>
+                          <div style={{ width: '100%', height: '4px', background: 'rgba(255,255,255,0.1)', borderRadius: '2px', overflow: 'hidden' }}>
+                            <div style={{
+                              width: `${percent}%`,
+                              height: '100%',
+                              background: percent >= 100 ? 'var(--success)' : '#3b82f6'
+                            }} />
+                          </div>
+                        </div>
                       </td>
                       <td>
                         <span className={`badge ${task.status === 'SCHEDULED' ? 'badge-success' : task.status === 'PENDING' ? 'badge-warning' : ''}`}>
@@ -276,6 +308,10 @@ export const MissionTasks = () => {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', flex: 1 }}>
                   <label>Priority (1-5)</label>
                   <input required type="number" min="1" max="5" value={formData.priority} onChange={e => setFormData({...formData, priority: parseInt(e.target.value) || 3})} style={{ padding: '0.5rem', background: 'var(--bg-secondary)', color: 'white', border: '1px solid var(--border-color)', borderRadius: '4px' }} />
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', flex: 1 }}>
+                  <label>Target Data (MB)</label>
+                  <input required type="number" min="1" value={formData.targetMb} onChange={e => setFormData({...formData, targetMb: parseInt(e.target.value) || 1000})} style={{ padding: '0.5rem', background: 'var(--bg-secondary)', color: 'white', border: '1px solid var(--border-color)', borderRadius: '4px' }} />
                 </div>
               </div>
 

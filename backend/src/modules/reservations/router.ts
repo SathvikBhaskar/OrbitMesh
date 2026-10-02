@@ -29,6 +29,17 @@ reservationsRouter.get("/", async (req, res, next) => {
         windowAos: reservations.windowAos,
         windowLos: reservations.windowLos,
         status: reservations.status,
+        executionState: reservations.executionState,
+        activeDispatchId: reservations.activeDispatchId,
+        dispatchedAt: reservations.dispatchedAt,
+        dispatchAckAt: reservations.dispatchAckAt,
+        aosActual: reservations.aosActual,
+        losActual: reservations.losActual,
+        bytesTransferred: reservations.bytesTransferred,
+        failureReason: reservations.failureReason,
+        taskTargetBytes: missionTasks.targetBytes,
+        taskFulfilledBytes: missionTasks.fulfilledBytes,
+        taskRemainingBytes: missionTasks.remainingBytes,
         createdAt: reservations.createdAt,
       })
       .from(reservations)
