@@ -57,8 +57,10 @@ export class SchedulerWrapperService {
             scheduler = new HybridScoringScheduler(this.candidateService, new Date(), DEFAULT_HYBRID_WEIGHTS, "PRIORITY");
           } else if (policy === "FCFS") {
             scheduler = new HybridScoringScheduler(this.candidateService, new Date(), DEFAULT_HYBRID_WEIGHTS, "FCFS");
-          } else {
+          } else if (policy === "META") {
             scheduler = new MetaScheduler(this.candidateService, "PRODUCTION");
+          } else {
+            scheduler = new HybridScoringScheduler(this.candidateService, new Date(), DEFAULT_HYBRID_WEIGHTS, "HYBRID");
           }
           const result = await scheduler.schedulePendingTasks();
 
@@ -80,7 +82,6 @@ export class SchedulerWrapperService {
         });
       });
     } catch (e: any) {
-      console.error("Preview caught error:", e);
       if (e.name === "PreviewRollback" || e.message === "PREVIEW_ROLLBACK") {
         previewPayload = e.payload;
       } else {
@@ -90,7 +91,7 @@ export class SchedulerWrapperService {
 
     // 4. Construct response
     return {
-      policy: policy || "META",
+      policy: policy || "HYBRID",
       scheduleVersion: currentVersion,
       lockedReservations: lockedRes,
       proposedReservations: previewPayload.proposedReservations,
@@ -98,11 +99,11 @@ export class SchedulerWrapperService {
       unchanged: [], // for now
       unscheduled: previewPayload.result.results.filter((r: any) => r.status === "UNSCHEDULED"),
       metrics: previewPayload.result.metrics,
-      scoreBreakdowns: previewPayload.result.scoreBreakdowns,
+      scoreBreakdowns: previewPayload.result.scoreBreakdowns || [],
     };
   }
 
-  async commit(proposedReservations: any[], expectedVersion: number, userId: string) {
+  async commit(proposedReservations: any[], expectedVersion: number, userId: string, policy: string = "HYBRID") {
     return await db.transaction(async (tx) => {
       // 1. Lock schedule version
       const versionResult = await tx.select().from(scheduleVersions).for("update").limit(1);
@@ -129,9 +130,6 @@ export class SchedulerWrapperService {
 
       const auditRecords: any[] = [];
       for (const resv of proposedReservations) {
-        // Strip out the old UUID and createdAt so they get generated fresh, OR keep them?
-        // Let's keep the same UUIDs so we match the proposal.
-        
         await tx.insert(reservations).values({
           id: resv.id,
           missionTaskId: resv.missionTaskId,
@@ -155,10 +153,19 @@ export class SchedulerWrapperService {
           entityType: "RESERVATION",
           entityId: resv.id,
           action: "CREATE_RESERVATION",
-          afterState: resv,
-          reason: "Automated schedule commit"
+          afterState: { ...resv, policy },
+          reason: `Automated schedule commit (${policy})`
         });
       }
+
+      auditRecords.push({
+        userId,
+        entityType: "SCHEDULE",
+        entityId: `v${currentVersion}`,
+        action: "COMMIT_SCHEDULE",
+        afterState: { policy, committedCount: proposedReservations.length, newVersion: currentVersion + 1 },
+        reason: `Automated schedule commit with policy: ${policy}`
+      });
 
       if (auditRecords.length > 0) {
         await tx.insert(scheduleAuditLog).values(auditRecords);
@@ -167,7 +174,7 @@ export class SchedulerWrapperService {
       // Increment version
       await tx.update(scheduleVersions).set({ version: sql`${scheduleVersions.version} + 1` });
 
-      return { success: true, committed: proposedReservations.length };
+      return { success: true, committed: proposedReservations.length, policy, newVersion: currentVersion + 1 };
     });
   }
 }

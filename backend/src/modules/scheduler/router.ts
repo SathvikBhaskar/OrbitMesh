@@ -102,13 +102,13 @@ schedulerRouter.get("/version", async (req, res, next) => {
 
 schedulerRouter.post("/commit", authorize(["OPERATOR", "ADMIN"]), async (req, res, next) => {
   try {
-    const { scheduleVersion, proposedReservations } = req.body;
+    const { scheduleVersion, proposedReservations, policy } = req.body;
     if (typeof scheduleVersion !== "number" || !Array.isArray(proposedReservations)) {
       res.status(400).json({ error: "Invalid scheduleVersion or proposedReservations" });
       return;
     }
     const userId = (req.user as any).sub as string;
-    const result = await wrapperService.commit(proposedReservations, scheduleVersion, userId);
+    const result = await wrapperService.commit(proposedReservations, scheduleVersion, userId, policy || "HYBRID");
     res.json(result);
   } catch (err: any) {
     if (err.code === "SCHEDULE_VERSION_CONFLICT") {

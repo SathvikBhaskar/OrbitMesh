@@ -207,4 +207,150 @@ describe('GanttTimeline', () => {
     // For now we just verify it doesn't crash
     expect(api.get).toHaveBeenCalled();
   });
+
+  it('allows operator to switch policy and sends policy in preview and commit request', async () => {
+    (api.get as any).mockImplementation(async (url: string) => {
+      if (url === '/reservations') return mockReservations;
+      if (url === '/contact-windows') return mockWindows;
+      return [];
+    });
+
+    render(<GanttTimeline />);
+    await waitFor(() => expect(screen.queryByText(/Loading/i)).not.toBeInTheDocument());
+
+    // Switch to PRIORITY policy
+    const priorityBtn = screen.getByText('PRIORITY');
+    fireEvent.click(priorityBtn);
+
+    (api.post as any).mockResolvedValueOnce({
+      policy: 'PRIORITY',
+      scheduleVersion: 1,
+      proposedReservations: [
+        { id: 'p1', satelliteId: 'sat1', groundStationId: 'gs1', status: 'PENDING', source: 'AUTOMATED', locked: false, allocatedStart: new Date().toISOString(), allocatedEnd: new Date(Date.now() + 1800000).toISOString() }
+      ],
+      metrics: {
+        scheduledTaskCount: 1,
+        unscheduledTaskCount: 0,
+        weightedPriorityValue: 10,
+        deadlineSuccessRate: 100,
+        totalScheduledDurationSeconds: 1800,
+        stationUtilizationPercent: 50,
+        averageSlackSecondsAtAllocation: 300,
+      }
+    });
+
+    fireEvent.click(screen.getByText('Run Scheduler Preview'));
+
+    await waitFor(() => {
+      expect(api.post).toHaveBeenCalledWith('/scheduler/preview', {
+        scheduleVersion: 0,
+        policy: 'PRIORITY'
+      });
+      expect(screen.getByText('PRIORITY POLICY')).toBeInTheDocument();
+    });
+
+    (api.post as any).mockResolvedValueOnce({
+      success: true,
+      committed: 1,
+      policy: 'PRIORITY'
+    });
+
+    fireEvent.click(screen.getByText('Commit Schedule'));
+
+    await waitFor(() => {
+      expect(api.post).toHaveBeenCalledWith('/scheduler/commit', {
+        scheduleVersion: 1,
+        proposedReservations: expect.any(Array),
+        policy: 'PRIORITY'
+      });
+    });
+  });
+
+  it('renders ground station capability badges in station utilization track', async () => {
+    const mockGs = [
+      {
+        id: 'gs1',
+        code: 'GS-CHE',
+        name: 'Chennai Ground Station',
+        supportedFrequencyBands: ['S_BAND', 'X_BAND'],
+        maxConcurrentContacts: 2,
+        maxDataRateMbps: 150.0,
+        status: 'AVAILABLE'
+      }
+    ];
+
+    (api.get as any).mockImplementation(async (url: string) => {
+      if (url === '/reservations') return mockReservations;
+      if (url === '/contact-windows') return mockWindows;
+      if (url === '/ground-stations') return mockGs;
+      return [];
+    });
+
+    render(<GanttTimeline />);
+    await waitFor(() => expect(screen.queryByText(/Loading/i)).not.toBeInTheDocument());
+
+    expect(screen.getByText('Chennai Ground Station')).toBeInTheDocument();
+    expect(screen.getByText('S')).toBeInTheDocument();
+    expect(screen.getByText('X')).toBeInTheDocument();
+    expect(screen.getByText('2 ch')).toBeInTheDocument();
+    expect(screen.getByText('150M')).toBeInTheDocument();
+  });
+
+  it('renders live proposal metrics and allows inspecting score breakdown', async () => {
+    (api.get as any).mockImplementation(async (url: string) => {
+      if (url === '/reservations') return mockReservations;
+      if (url === '/contact-windows') return mockWindows;
+      return [];
+    });
+
+    render(<GanttTimeline />);
+    await waitFor(() => expect(screen.queryByText(/Loading/i)).not.toBeInTheDocument());
+
+    (api.post as any).mockResolvedValueOnce({
+      policy: 'HYBRID',
+      scheduleVersion: 1,
+      proposedReservations: [
+        { id: 'p1', satelliteId: 'sat1', groundStationId: 'gs1', status: 'PENDING', source: 'AUTOMATED', locked: false, allocatedStart: new Date().toISOString(), allocatedEnd: new Date(Date.now() + 1800000).toISOString() }
+      ],
+      metrics: {
+        scheduledTaskCount: 5,
+        unscheduledTaskCount: 1,
+        weightedPriorityValue: 42,
+        deadlineSuccessRate: 83.3,
+        totalScheduledDurationSeconds: 1500,
+        stationUtilizationPercent: 72.5,
+        averageSlackSecondsAtAllocation: 412,
+      },
+      scoreBreakdowns: [
+        {
+          taskId: 'task-12345678',
+          windowId: 'win-1',
+          compositeScore: 0.885,
+          normPriority: 0.90,
+          normUrgency: 0.85,
+          normElevation: 0.92
+        }
+      ]
+    });
+
+    fireEvent.click(screen.getByText('Run Scheduler Preview'));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Live Proposal Metrics/i)).toBeInTheDocument();
+      expect(screen.getByText('83.3%')).toBeInTheDocument();
+      expect(screen.getByText('72.5%')).toBeInTheDocument();
+      expect(screen.getByText('42')).toBeInTheDocument();
+    });
+
+    // Inspect Score Breakdowns
+    const inspectBtn = screen.getByText(/Inspect Scores/i);
+    fireEvent.click(inspectBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText('Candidate Hybrid Scoring Breakdown:')).toBeInTheDocument();
+      expect(screen.getByText('task-123')).toBeInTheDocument();
+      expect(screen.getByText('0.885')).toBeInTheDocument();
+    });
+  });
 });
+
