@@ -3,7 +3,7 @@ import { authorize } from "../../../middlewares/auth";
 import { EventControlPlaneService } from "./event-control-plane.service";
 import { db } from "../../../db/client";
 import { operationalEventLedger, operationalBatches } from "../../../db/schema";
-import { desc } from "drizzle-orm";
+import { desc, eq, and } from "drizzle-orm";
 
 export const controlPlaneRouter = Router();
 const controlPlaneService = new EventControlPlaneService();
@@ -86,19 +86,89 @@ controlPlaneRouter.post(
   }
 );
 
-// 4. Query ledger audit items
+// 4. Query ledger audit items (filtered by status or eventType)
 controlPlaneRouter.get(
   "/ledger",
   authorize(["OPERATOR", "ADMIN", "VIEWER"]),
   async (req, res, next) => {
     try {
-      const items = await db
+      const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 50, 1), 200);
+      const statusFilter = typeof req.query.status === "string" ? req.query.status : undefined;
+      const eventTypeFilter = typeof req.query.eventType === "string" ? req.query.eventType : undefined;
+
+      const conditions = [];
+      if (statusFilter) {
+        conditions.push(eq(operationalEventLedger.status, statusFilter));
+      }
+      if (eventTypeFilter) {
+        conditions.push(eq(operationalEventLedger.eventType, eventTypeFilter));
+      }
+
+      const baseQuery = db.select().from(operationalEventLedger);
+      const filtered = conditions.length > 0 ? baseQuery.where(and(...conditions)) : baseQuery;
+      const items = await filtered.orderBy(desc(operationalEventLedger.createdAt)).limit(limit);
+
+      res.json({ ledger: items, count: items.length });
+    } catch (err: any) {
+      next(err);
+    }
+  }
+);
+
+// 5. Query operational batches (list recent batches)
+controlPlaneRouter.get(
+  "/batches",
+  authorize(["OPERATOR", "ADMIN", "VIEWER"]),
+  async (req, res, next) => {
+    try {
+      const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 30, 1), 100);
+      const statusFilter = typeof req.query.status === "string" ? req.query.status : undefined;
+
+      const baseQuery = db.select().from(operationalBatches);
+      const filtered = statusFilter ? baseQuery.where(eq(operationalBatches.status, statusFilter)) : baseQuery;
+      const items = await filtered.orderBy(desc(operationalBatches.createdAt)).limit(limit);
+
+      res.json({ batches: items, count: items.length });
+    } catch (err: any) {
+      next(err);
+    }
+  }
+);
+
+// 6. Inspect single operational batch with its constituent events
+controlPlaneRouter.get(
+  "/batches/:batchId",
+  authorize(["OPERATOR", "ADMIN", "VIEWER"]),
+  async (req, res, next) => {
+    try {
+      const batchId = String(req.params.batchId);
+      if (!batchId) {
+        res.status(400).json({ error: "Missing required batchId" });
+        return;
+      }
+
+      const [batch] = await db
+        .select()
+        .from(operationalBatches)
+        .where(eq(operationalBatches.id, batchId))
+        .limit(1);
+
+      if (!batch) {
+        res.status(404).json({ error: `Batch ${batchId} not found` });
+        return;
+      }
+
+      // Fetch constituent events from ledger
+      const constituentEvents = await db
         .select()
         .from(operationalEventLedger)
-        .orderBy(desc(operationalEventLedger.createdAt))
-        .limit(50);
+        .where(eq(operationalEventLedger.batchId, batchId))
+        .orderBy(desc(operationalEventLedger.createdAt));
 
-      res.json({ ledger: items });
+      res.json({
+        batch,
+        events: constituentEvents,
+      });
     } catch (err: any) {
       next(err);
     }

@@ -29,6 +29,19 @@ import {
 import { EventCoalescer } from "./event-coalescer";
 import { OperationalReplanningService } from "../operational-replanning/operational-replanning.service";
 import { DynamicReplanningService } from "../dynamic-replanning/dynamic-replanning.service";
+import { logger } from "../../../config/logger";
+import {
+  controlPlaneEventsIngestedTotal,
+  controlPlaneIdempotencyHitsTotal,
+  controlPlaneBatchesTotal,
+  controlPlaneEventsCoalescedTotal,
+  controlPlaneBatchDurationSeconds,
+  controlPlaneQueueWaitSeconds,
+  controlPlaneVersionAdvancesTotal,
+  controlPlanePreemptionsTotal,
+  controlPlaneRescuesTotal,
+  controlPlaneFailuresTotal,
+} from "../../../config/metrics";
 
 export class EventControlPlaneService {
   private coalescer = new EventCoalescer();
@@ -59,12 +72,22 @@ export class EventControlPlaneService {
         .limit(1);
 
       if (existing && existing.status === "COMPLETED" && existing.executionReceipt) {
+        controlPlaneIdempotencyHitsTotal.inc({ event_type: rawEvents[0]!.eventType });
+        logger.info({
+          idempotencyKey: rawEvents[0]!.idempotencyKey,
+          eventType: rawEvents[0]!.eventType,
+          batchId: existing.batchId,
+          lifecycleStatus: "COMPLETED",
+        }, "Control plane idempotency hit: returning cached receipt");
         return existing.executionReceipt as unknown as BatchExecutionReceipt;
       }
     }
 
     // 2. Queue for serialized single-flight execution
+    const enqueueTime = Date.now();
     const runTask = async () => {
+      const waitSec = (Date.now() - enqueueTime) / 1000;
+      controlPlaneQueueWaitSeconds.observe(waitSec);
       return await this.executeSerializedBatch(rawEvents, options);
     };
 
@@ -102,6 +125,14 @@ export class EventControlPlaneService {
     ) {
       const first = existingByKey.get(rawEvents[0]!.idempotencyKey);
       if (first?.executionReceipt) {
+        for (const e of rawEvents) {
+          controlPlaneIdempotencyHitsTotal.inc({ event_type: e.eventType });
+        }
+        logger.info({
+          batchId: first.batchId,
+          eventCount: rawEvents.length,
+          lifecycleStatus: "COMPLETED",
+        }, "Control plane batch idempotency hit: returning cached receipt");
         return first.executionReceipt as unknown as BatchExecutionReceipt;
       }
     }
@@ -109,12 +140,14 @@ export class EventControlPlaneService {
     // 1. Persist new events in ledger with status RECEIVED
     for (const evt of rawEvents) {
       if (!existingByKey.has(evt.idempotencyKey)) {
+        const urgency = evt.urgency || getEventUrgency(evt.eventType);
+        controlPlaneEventsIngestedTotal.inc({ event_type: evt.eventType, urgency });
         await db
           .insert(operationalEventLedger)
           .values({
             idempotencyKey: evt.idempotencyKey,
             eventType: evt.eventType,
-            urgency: evt.urgency || getEventUrgency(evt.eventType),
+            urgency,
             payload: evt.payload,
             status: "RECEIVED",
           })
@@ -127,6 +160,10 @@ export class EventControlPlaneService {
 
     // Update superseded events in ledger
     for (const sup of supersededEvents) {
+      controlPlaneEventsCoalescedTotal.inc({
+        event_type: sup.event.eventType,
+        reason: sup.reason.includes("subsumed") ? "subsumed" : "coalesced",
+      });
       await db
         .update(operationalEventLedger)
         .set({
@@ -256,9 +293,24 @@ export class EventControlPlaneService {
           .update(scheduleVersions)
           .set({ version: vAfter, updatedAt: new Date() })
           .where(eq(scheduleVersions.version, vBefore));
+        controlPlaneVersionAdvancesTotal.inc();
+      }
+
+      if (totalDisplaced > 0) {
+        controlPlanePreemptionsTotal.inc(totalDisplaced);
+      }
+      if (totalRescued > 0) {
+        controlPlaneRescuesTotal.inc({ status: "scheduled" }, totalRescued);
+      }
+      if (totalUnrescuable > 0) {
+        controlPlaneRescuesTotal.inc({ status: "failed" }, totalUnrescuable);
       }
 
       const completedAt = new Date();
+      const durationSec = (completedAt.getTime() - startTime.getTime()) / 1000;
+      controlPlaneBatchDurationSeconds.observe(durationSec);
+      controlPlaneBatchesTotal.inc({ status: "COMPLETED" });
+
       const receipt: BatchExecutionReceipt = {
         batchId,
         status: "COMPLETED",
@@ -314,8 +366,31 @@ export class EventControlPlaneService {
           .where(eq(operationalEventLedger.idempotencyKey, evt.idempotencyKey));
       }
 
+      logger.info({
+        batchId,
+        scheduleVersionBefore: vBefore,
+        scheduleVersionAfter: vAfter,
+        eventCount: activeEvents.length,
+        supersededCount: supersededEvents.length,
+        totalDisplaced,
+        totalRescued,
+        totalUnrescuable,
+        durationSec,
+        lifecycleStatus: "COMPLETED",
+      }, "Operational batch executed successfully");
+
       return receipt;
     } catch (err: any) {
+      controlPlaneFailuresTotal.inc({ stage: "batch_execution" });
+      controlPlaneBatchesTotal.inc({ status: "FAILED" });
+      logger.error({
+        batchId,
+        scheduleVersionBefore: vBefore,
+        eventCount: activeEvents.length,
+        lifecycleStatus: "FAILED",
+        error: err.message,
+      }, "Operational batch execution failed");
+
       // Error handling & recovery state: Mark batch and ledger items as FAILED, version N -> N
       await db
         .update(operationalBatches)

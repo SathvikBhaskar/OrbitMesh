@@ -10,6 +10,7 @@ import { SchedulerRun } from './components/SchedulerRun';
 import { Experiments } from './components/Experiments';
 import { Satellites } from './components/Satellites';
 import { OrbitalMap } from './components/orbital-map/OrbitalMap';
+import { ControlPlanePanel } from './components/ControlPlanePanel';
 import { Login } from './components/Login';
 
 function App() {
@@ -103,6 +104,7 @@ function App() {
       case 'windows': return <ContactWindows />;
       case 'timeline': return <ReservationTimeline />;
       case 'inspector': return <SchedulerRun />;
+      case 'control-plane': return <ControlPlanePanel />;
       case 'satellites': return <Satellites />;
       case 'map': return <OrbitalMap />;
       case 'experiments': return <Experiments />;
@@ -138,6 +140,9 @@ function App() {
           </div>
           <div className={`nav-item ${activeTab === 'dashboard' ? 'active' : ''}`} onClick={() => setActiveTab('dashboard')}>
             <LayoutDashboard size={18} /> Dashboard
+          </div>
+          <div className={`nav-item ${activeTab === 'control-plane' ? 'active' : ''}`} onClick={() => setActiveTab('control-plane')}>
+            <Zap size={18} /> Control Plane
           </div>
           <div className={`nav-item ${activeTab === 'tasks' ? 'active' : ''}`} onClick={() => setActiveTab('tasks')}>
             <ListTodo size={18} /> Mission Tasks
