@@ -3,6 +3,7 @@ import { authorize } from "../../middlewares/auth";
 import { CandidateService } from "./candidate-service";
 import { FcfsScheduler } from "./fcfs-scheduler";
 import { PriorityScheduler } from "./priority-scheduler";
+import { UrgencyScheduler } from "./urgency-scheduler";
 import { MetaScheduler } from "../meta-scheduler/meta-scheduler";
 
 import { db } from "../../db/client";
@@ -15,6 +16,7 @@ export const schedulerRouter = Router();
 const candidateService = new CandidateService();
 const fcfsScheduler = new FcfsScheduler(candidateService);
 const priorityScheduler = new PriorityScheduler(candidateService);
+const urgencyScheduler = new UrgencyScheduler(candidateService);
 
 // We instantiate MetaScheduler with the PRODUCTION runType
 const metaScheduler = new MetaScheduler(candidateService, "PRODUCTION");
@@ -36,6 +38,16 @@ schedulerRouter.post("/priority/run", async (req, res, next) => {
     next(err);
   }
 });
+
+schedulerRouter.post("/urgency/run", authorize(["OPERATOR", "ADMIN"]), async (req, res, next) => {
+  try {
+    const result = await urgencyScheduler.schedulePendingTasks();
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
 schedulerRouter.post("/meta/run", authorize(["OPERATOR", "ADMIN"]), async (req, res, next) => {
   try {
     const result = await metaScheduler.schedulePendingTasks();
@@ -51,12 +63,12 @@ const wrapperService = new SchedulerWrapperService();
 
 schedulerRouter.post("/preview", authorize(["OPERATOR", "ADMIN"]), async (req, res, next) => {
   try {
-    const { scheduleVersion } = req.body;
+    const { scheduleVersion, policy } = req.body;
     if (typeof scheduleVersion !== "number") {
       res.status(400).json({ error: "Invalid scheduleVersion" });
       return;
     }
-    const result = await wrapperService.preview(scheduleVersion);
+    const result = await wrapperService.preview(scheduleVersion, policy);
     res.json(result);
   } catch (err: any) {
     if (err.code === "SCHEDULE_VERSION_CONFLICT") {

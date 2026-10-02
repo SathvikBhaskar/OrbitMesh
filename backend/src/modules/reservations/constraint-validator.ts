@@ -103,11 +103,20 @@ export class ConstraintValidationService {
       });
     }
 
-    // 8. Deadline satisfied
+    // 8. Deadline and Slack satisfied
+    const slackSeconds = (task.deadline.getTime() - req.endTime.getTime()) / 1000;
     if (req.endTime > task.deadline) {
       errors.push({
         code: "DEADLINE_MISSED",
         message: "Reservation end time is past the task deadline.",
+      });
+      errors.push({
+        code: "DEADLINE_EXCEEDED",
+        message: "Task deadline is exceeded by reservation end time.",
+      });
+      errors.push({
+        code: "INSUFFICIENT_SLACK",
+        message: `Task has negative slack (${slackSeconds}s) to complete before deadline.`,
       });
     }
 
@@ -160,6 +169,97 @@ export class ConstraintValidationService {
     return {
       valid: errors.length === 0,
       errors,
+    };
+  }
+
+  /**
+   * Evaluates hard static and geometric constraints for a candidate contact window
+   * against a mission task before any interval search or urgency scoring.
+   */
+  validateCandidateWindow(
+    task: {
+      satelliteId: string;
+      deadline: Date;
+      durationSeconds: number;
+      requiredFrequencyBand?: string | null;
+      minDataRateMbps?: number | null;
+    },
+    cw: {
+      satelliteId: string;
+      aos: Date;
+      los: Date;
+      groundStationId: string;
+    },
+    gs?: {
+      supportedFrequencyBands?: string[] | null;
+      maxDataRateMbps?: number | null;
+      maxConcurrentContacts?: number | null;
+    }
+  ): { valid: boolean; errors: ValidationError[]; slackSeconds: number } {
+    const errors: ValidationError[] = [];
+
+    // 1. Satellite match
+    if (task.satelliteId !== cw.satelliteId) {
+      errors.push({ code: "SATELLITE_MISMATCH", message: "Task satellite does not match contact window." });
+    }
+
+    // 2. Window duration vs task duration
+    const windowDurationSeconds = (cw.los.getTime() - cw.aos.getTime()) / 1000;
+    if (windowDurationSeconds < task.durationSeconds) {
+      errors.push({
+        code: "DURATION_UNSATISFIED",
+        message: `Window duration (${windowDurationSeconds}s) is shorter than task duration (${task.durationSeconds}s).`,
+      });
+      errors.push({
+        code: "NO_FEASIBLE_WINDOW",
+        message: "Contact window is too short to accommodate task.",
+      });
+    }
+
+    // 3. RF Frequency Band compatibility
+    if (task.requiredFrequencyBand && gs?.supportedFrequencyBands && gs.supportedFrequencyBands.length > 0) {
+      if (!gs.supportedFrequencyBands.includes(task.requiredFrequencyBand)) {
+        errors.push({
+          code: "INCOMPATIBLE_FREQUENCY_BAND",
+          message: `Station does not support required frequency band '${task.requiredFrequencyBand}'.`,
+        });
+      }
+    }
+
+    // 4. Data rate capability
+    if (task.minDataRateMbps && gs?.maxDataRateMbps) {
+      if (task.minDataRateMbps > gs.maxDataRateMbps) {
+        errors.push({
+          code: "INSUFFICIENT_STATION_DATA_RATE",
+          message: `Task requires ${task.minDataRateMbps} Mbps, station maximum is ${gs.maxDataRateMbps} Mbps.`,
+        });
+      }
+    }
+
+    // 5. Slack Time & Deadline Viability
+    // Earliest possible completion is cw.aos + task.durationSeconds
+    const earliestEndMs = cw.aos.getTime() + task.durationSeconds * 1000;
+    const slackSeconds = (task.deadline.getTime() - earliestEndMs) / 1000;
+
+    if (earliestEndMs > task.deadline.getTime() || slackSeconds < 0) {
+      errors.push({
+        code: "DEADLINE_MISSED",
+        message: "Task deadline is earlier than earliest possible completion.",
+      });
+      errors.push({
+        code: "DEADLINE_EXCEEDED",
+        message: `Task deadline (${task.deadline.toISOString()}) is exceeded by window earliest completion (${new Date(earliestEndMs).toISOString()}).`,
+      });
+      errors.push({
+        code: "INSUFFICIENT_SLACK",
+        message: `Task has negative slack (${slackSeconds}s) on this contact window.`,
+      });
+    }
+
+    return {
+      valid: errors.length === 0,
+      errors,
+      slackSeconds,
     };
   }
 }

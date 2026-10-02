@@ -3,6 +3,7 @@ import { scheduleVersions, scheduleProposals, reservations, missionTasks, schedu
 import { eq, inArray, sql } from "drizzle-orm";
 import { MetaScheduler } from "../meta-scheduler/meta-scheduler";
 import { CandidateService } from "./candidate-service";
+import { UrgencyScheduler } from "./urgency-scheduler";
 
 class PreviewRollback extends Error {
   constructor(public payload: any) {
@@ -14,7 +15,7 @@ class PreviewRollback extends Error {
 export class SchedulerWrapperService {
   private candidateService = new CandidateService();
 
-  async preview(expectedVersion: number) {
+  async preview(expectedVersion: number, policy?: string) {
     // 1. Check schedule version
     const versionResult = await db.select().from(scheduleVersions).limit(1);
     const currentVersion = versionResult[0]?.version || 0;
@@ -45,13 +46,18 @@ export class SchedulerWrapperService {
               .where(inArray(missionTasks.id, taskIds));
           }
 
-          const metaScheduler = new MetaScheduler(this.candidateService, "PRODUCTION");
-          const result = await metaScheduler.schedulePendingTasks();
+          let scheduler: any;
+          if (policy === "URGENCY") {
+            scheduler = new UrgencyScheduler(this.candidateService);
+          } else {
+            scheduler = new MetaScheduler(this.candidateService, "PRODUCTION");
+          }
+          const result = await scheduler.schedulePendingTasks();
 
           // Capture the exact reservations that were proposed
           const scheduledIds = result.results
-            .filter(r => r.status === "SCHEDULED" && r.reservationId)
-            .map(r => r.reservationId as string);
+            .filter((r: any) => r.status === "SCHEDULED" && r.reservationId)
+            .map((r: any) => r.reservationId as string);
 
           let proposedReservations: any[] = [];
           if (scheduledIds.length > 0) {
