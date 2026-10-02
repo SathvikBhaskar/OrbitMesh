@@ -77,6 +77,32 @@ export const adapterTransportHealthEnum = pgEnum("adapter_transport_health", [
   "COMMUNICATION_GAP",
 ]);
 
+export const outboxMessageStatusEnum = pgEnum("outbox_message_status", [
+  "PENDING",
+  "DELIVERING",
+  "DELIVERED",
+  "RETRY",
+  "DLQ",
+]);
+
+export const outboxMessageTypeEnum = pgEnum("outbox_message_type", [
+  "STAGE_DISPATCH",
+  "ARM_DISPATCH",
+  "ABORT_PASS",
+  "RF_INHIBIT",
+  "STATUS_QUERY",
+]);
+
+export const executionInterlockStateEnum = pgEnum("execution_interlock_state", [
+  "NONE",
+  "ABORT_REQUESTED",
+  "ABORT_CONFIRMED",
+  "ABORT_UNCONFIRMED",
+  "RF_INHIBIT_REQUESTED",
+  "RF_INHIBIT_CONFIRMED",
+  "INTERLOCK_FAILED",
+]);
+
 export const satellites = pgTable(
   "satellites",
   {
@@ -281,6 +307,9 @@ export const reservations = pgTable(
     bytesTransferred: bigint("bytes_transferred", { mode: "number" }).default(0).notNull(),
     failureReason: executionFailureReasonEnum("failure_reason"),
     telemetryMetrics: jsonb("telemetry_metrics").default({}).notNull(),
+    executionInterlock: executionInterlockStateEnum("execution_interlock").default("NONE").notNull(),
+    interlockRequestedAt: timestamp("interlock_requested_at", { withTimezone: true }),
+    interlockConfirmedAt: timestamp("interlock_confirmed_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
@@ -496,6 +525,37 @@ export const dispatchAttempts = pgTable(
     resAttemptIdx: unique("uq_dispatch_attempt_num").on(table.reservationId, table.attemptNumber),
     resIdIdx: index("idx_dispatch_attempts_res_id").on(table.reservationId),
     stateIdx: index("idx_dispatch_attempts_state").on(table.state),
+  })
+);
+
+export const outboundDispatchMessages = pgTable(
+  "outbound_dispatch_messages",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    messageId: varchar("message_id", { length: 64 }).notNull().unique(),
+    dispatchId: varchar("dispatch_id", { length: 64 })
+      .notNull()
+      .references(() => dispatchAttempts.dispatchId, { onDelete: "restrict" }),
+    reservationId: uuid("reservation_id")
+      .notNull()
+      .references(() => reservations.id, { onDelete: "restrict" }),
+    providerId: varchar("provider_id", { length: 64 }).notNull(),
+    messageType: outboxMessageTypeEnum("message_type").notNull(),
+    payload: jsonb("payload").default(sql`'{}'::jsonb`).notNull(),
+    status: outboxMessageStatusEnum("status").default("PENDING").notNull(),
+    attemptCount: integer("attempt_count").default(0).notNull(),
+    maxAttempts: integer("max_attempts").default(5).notNull(),
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).defaultNow().notNull(),
+    lastAttemptAt: timestamp("last_attempt_at", { withTimezone: true }),
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (table) => ({
+    pendingIdx: index("outbound_dispatch_pending_idx").on(table.status, table.nextAttemptAt),
+    resIdx: index("outbound_dispatch_res_idx").on(table.reservationId),
+    dispIdx: index("outbound_dispatch_disp_idx").on(table.dispatchId),
   })
 );
 
