@@ -110,9 +110,11 @@ function findEarliestFeasibleSlotInWindow(
   window: { aos: Date; los: Date; groundStationId: string },
   stationCapacity: number,
   stationResvs: Array<{ allocatedStart: Date; allocatedEnd: Date }>,
-  satelliteResvs: Array<{ allocatedStart: Date; allocatedEnd: Date }>
+  satelliteResvs: Array<{ allocatedStart: Date; allocatedEnd: Date }>,
+  guardBandSeconds: number = 0
 ): { start: Date; end: Date } | null {
   const durationMs = task.durationSeconds * 1000;
+  const guardMs = guardBandSeconds * 1000;
   const winAos = window.aos.getTime();
   const winLos = window.los.getTime();
   const deadlineMs = task.deadline.getTime();
@@ -122,13 +124,13 @@ function findEarliestFeasibleSlotInWindow(
     const s = r.allocatedStart.getTime();
     const e = r.allocatedEnd.getTime();
     if (s >= winAos && s < winLos) points.add(s);
-    if (e >= winAos && e < winLos) points.add(e);
+    if (e + guardMs >= winAos && e + guardMs < winLos) points.add(e + guardMs);
   }
   for (const r of satelliteResvs) {
     const s = r.allocatedStart.getTime();
     const e = r.allocatedEnd.getTime();
     if (s >= winAos && s < winLos) points.add(s);
-    if (e >= winAos && e < winLos) points.add(e);
+    if (e + guardMs >= winAos && e + guardMs < winLos) points.add(e + guardMs);
   }
 
   const sortedPoints = Array.from(points).sort((a, b) => a - b);
@@ -140,10 +142,12 @@ function findEarliestFeasibleSlotInWindow(
     if (endMs > winLos) break;
     if (endMs > deadlineMs) break;
 
-    // Check satellite conflict (single transceiver exclusivity)
-    const satConflict = satelliteResvs.some(
-      (r) => r.allocatedStart.getTime() < endMs && r.allocatedEnd.getTime() > startMs
-    );
+    // Check satellite conflict (single transceiver exclusivity) with guard band
+    const satConflict = satelliteResvs.some((r) => {
+      const rStart = r.allocatedStart.getTime();
+      const rEnd = r.allocatedEnd.getTime();
+      return startMs < rEnd + guardMs && endMs + guardMs > rStart;
+    });
     if (satConflict) continue;
 
     // Check ground station concurrent capacity
@@ -162,7 +166,8 @@ export class HybridScoringScheduler implements SchedulerPolicy {
     private candidateService: CandidateService = new CandidateService(),
     private referenceTime: Date = new Date(),
     private weights: HybridScoringWeights = DEFAULT_HYBRID_WEIGHTS,
-    public policyType: SchedulerPolicyType = "HYBRID"
+    public policyType: SchedulerPolicyType = "HYBRID",
+    public guardBandSeconds: number = 0
   ) {}
 
   async schedulePendingTasks(targetTaskIds?: string[]): Promise<SchedulerResult> {
@@ -351,7 +356,8 @@ export class HybridScoringScheduler implements SchedulerPolicy {
         window,
         stationCapacity,
         currentStationResvs,
-        currentSatResvs
+        currentSatResvs,
+        this.guardBandSeconds
       );
 
       if (!slot) {
