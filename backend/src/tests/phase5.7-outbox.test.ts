@@ -13,6 +13,8 @@ import {
   outboundDispatchMessages,
 } from "../db/schema";
 import { outboxService } from "../modules/outbox/outbox.service";
+import { providerRegistry } from "../modules/ground-provider/provider.registry";
+import { MockGroundStationProviderAdapter } from "../modules/ground-provider/adapters/mock-provider.adapter";
 
 describe("Phase 5.7: Workstream 5.7.1 — Transactional Outbox & Durable Delivery", () => {
   let satId: string;
@@ -23,6 +25,9 @@ describe("Phase 5.7: Workstream 5.7.1 — Transactional Outbox & Durable Deliver
   let contactCounter = 0;
 
   beforeAll(async () => {
+    providerRegistry.registerAdapter(new MockGroundStationProviderAdapter("provider-alpha"), { autoCertify: true });
+    providerRegistry.registerAdapter(new MockGroundStationProviderAdapter("provider-beta"), { autoCertify: true });
+    providerRegistry.registerAdapter(new MockGroundStationProviderAdapter("provider-gamma"), { autoCertify: true });
     // 1. Setup base satellite, ground station, orbital data
     const [sat] = await db
       .insert(satellites)

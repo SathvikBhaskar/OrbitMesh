@@ -11,6 +11,7 @@ import {
   CreateOutboxMessageInput,
   AtomicExecutionReadyResult,
 } from "./outbox.types";
+import { providerRegistry } from "../ground-provider/provider.registry";
 import { logger } from "../../config/logger";
 
 export class OutboxService {
@@ -34,6 +35,9 @@ export class OutboxService {
       payload?: Record<string, unknown>;
     } = {}
   ): Promise<AtomicExecutionReadyResult> {
+    // 0. Production Certification Gate (§5.8.1): enforce that provider is certified
+    providerRegistry.assertCertified(providerId);
+
     return await db.transaction(async (tx) => {
       // 1. Fetch and lock reservation
       const resRows = await tx
@@ -189,6 +193,9 @@ export class OutboxService {
     }
 
     const msg = rows[0] as OutboxMessageRecord;
+
+    // Authoritative Production Gate (§5.8.1): enforce that provider is certified before delivery
+    providerRegistry.assertCertified(msg.providerId);
 
     // Check expiry
     if (msg.expiresAt && msg.expiresAt.getTime() < Date.now()) {

@@ -91,7 +91,7 @@ describe("Phase 5.7: Workstream 5.7.4 & Cross-Layer Resilience (Scenarios L thro
       supportedBands: ["S_BAND", "X_BAND"],
       maxDataRateMbps: 450,
     });
-    providerRegistry.registerAdapter(mockAdapter);
+    providerRegistry.registerAdapter(mockAdapter, { autoCertify: true });
 
     // Seed schedule versions if empty
     const versions = await db.select().from(scheduleVersions);
@@ -435,7 +435,7 @@ describe("Phase 5.7: Workstream 5.7.4 & Cross-Layer Resilience (Scenarios L thro
 
     // Provider process simulated restart: adapter instances re-instantiated, but provider internal DB retains pass
     const newAdapter = new MockGroundStationProviderAdapter("safety-provider");
-    providerRegistry.registerAdapter(newAdapter);
+    providerRegistry.registerAdapter(newAdapter, { autoCertify: true });
 
     // Reconcile status
     const recResult = await providerReconciliationService.reconcileAmbiguousDispatch(

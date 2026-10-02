@@ -121,7 +121,7 @@ describe("Phase 5.7: Workstream 5.7.2 & 5.7.3 — Provider Adapter & Security Pr
       supportedBands: ["S_BAND", "X_BAND"],
       maxDataRateMbps: 450,
     });
-    providerRegistry.registerAdapter(mockAdapter);
+    providerRegistry.registerAdapter(mockAdapter, { autoCertify: true });
   });
 
   afterAll(async () => {

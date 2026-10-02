@@ -612,6 +612,10 @@ export class ProviderCertificationHarness {
     return this.compileLayerResult("SAFETY", assertions);
   }
 
+  public static readonly CURRENT_CONTRACT_VERSION = "5.8.0";
+  public static readonly CURRENT_SUITE_VERSION = "5.8.1";
+  public static readonly DEFAULT_VALIDITY_DAYS = 90;
+
   // =========================================================================
   // COMPLETE 4-LAYER CERTIFICATION EXECUTION
   // =========================================================================
@@ -621,6 +625,9 @@ export class ProviderCertificationHarness {
       stationId?: string;
       secretKey?: string;
       keyId?: string;
+      adapterVersion?: string;
+      environment?: "PRODUCTION" | "STAGING" | "LAB" | "TEST";
+      validityDays?: number;
     } = {}
   ): Promise<ProviderCertificationReceipt> {
     logger.info(
@@ -649,11 +656,24 @@ export class ProviderCertificationHarness {
       safety.passedAssertions;
 
     const certifiedAt = new Date();
+    const validityDays = options.validityDays ?? ProviderCertificationHarness.DEFAULT_VALIDITY_DAYS;
+    const expiresAt = new Date(certifiedAt.getTime() + validityDays * 86400000);
+    const certificationRunId = `CERT-${certifiedAt.toISOString().slice(0, 10).replace(/-/g, "")}-${crypto.randomUUID().slice(0, 8)}`;
+    const adapterVersion = options.adapterVersion || (adapter as any).version || "1.0.0";
+    const contractVersion = ProviderCertificationHarness.CURRENT_CONTRACT_VERSION;
+    const certificationSuiteVersion = ProviderCertificationHarness.CURRENT_SUITE_VERSION;
+    const environment = options.environment || "PRODUCTION";
 
-    // Compute cryptographic signature over certification receipt
+    // Compute cryptographic digest over results and metadata
     const digestPayload = {
+      certificationRunId,
       providerId: adapter.providerId,
+      adapterVersion,
+      contractVersion,
+      certificationSuiteVersion,
       certifiedAt: certifiedAt.toISOString(),
+      expiresAt: expiresAt.toISOString(),
+      environment,
       isCertified,
       semanticPassed: semantic.passed,
       distributedPassed: distributed.passed,
@@ -663,16 +683,27 @@ export class ProviderCertificationHarness {
       passedAssertions,
     };
 
-    const digest = JSON.stringify(digestPayload);
+    const resultsDigest = crypto
+      .createHash("sha256")
+      .update(JSON.stringify(digestPayload))
+      .digest("hex");
+
     const signature = crypto
       .createHmac("sha256", this.harnessSecret)
-      .update(digest)
+      .update(resultsDigest)
       .digest("hex");
 
     const receipt: ProviderCertificationReceipt = {
+      certificationRunId,
       providerId: adapter.providerId,
+      adapterVersion,
+      contractVersion,
+      certificationSuiteVersion,
       certifiedAt,
+      expiresAt,
+      environment,
       isCertified,
+      resultsDigest,
       summary: {
         semantic: semantic.passed,
         distributed: distributed.passed,
@@ -692,7 +723,10 @@ export class ProviderCertificationHarness {
 
     logger.info(
       {
+        certificationRunId,
         providerId: adapter.providerId,
+        adapterVersion,
+        contractVersion,
         isCertified,
         passedAssertions,
         totalAssertions,
@@ -701,6 +735,71 @@ export class ProviderCertificationHarness {
     );
 
     return receipt;
+  }
+
+  /**
+   * Verify an existing certification receipt against master harness key, expiration, and version binding
+   */
+  public verifyReceipt(receipt: ProviderCertificationReceipt): {
+    isValid: boolean;
+    reason?: string;
+  } {
+    if (!receipt.isCertified) {
+      return { isValid: false, reason: "Receipt records failed certification" };
+    }
+    if (new Date(receipt.expiresAt).getTime() < Date.now()) {
+      return { isValid: false, reason: "Certification receipt has expired" };
+    }
+    if (receipt.contractVersion !== ProviderCertificationHarness.CURRENT_CONTRACT_VERSION) {
+      return {
+        isValid: false,
+        reason: `Contract version mismatch: receipt has [${receipt.contractVersion}], active is [${ProviderCertificationHarness.CURRENT_CONTRACT_VERSION}]`,
+      };
+    }
+
+    const digestPayload = {
+      certificationRunId: receipt.certificationRunId,
+      providerId: receipt.providerId,
+      adapterVersion: receipt.adapterVersion,
+      contractVersion: receipt.contractVersion,
+      certificationSuiteVersion: receipt.certificationSuiteVersion,
+      certifiedAt: new Date(receipt.certifiedAt).toISOString(),
+      expiresAt: new Date(receipt.expiresAt).toISOString(),
+      environment: receipt.environment,
+      isCertified: receipt.isCertified,
+      semanticPassed: receipt.summary.semantic,
+      distributedPassed: receipt.summary.distributed,
+      securityPassed: receipt.summary.security,
+      safetyPassed: receipt.summary.safety,
+      totalAssertions: receipt.summary.totalAssertions,
+      passedAssertions: receipt.summary.passedAssertions,
+    };
+
+    const expectedDigest = crypto
+      .createHash("sha256")
+      .update(JSON.stringify(digestPayload))
+      .digest("hex");
+
+    if (receipt.resultsDigest !== expectedDigest) {
+      return { isValid: false, reason: "Tampered results digest in certification receipt" };
+    }
+
+    const expectedSig = crypto
+      .createHmac("sha256", this.harnessSecret)
+      .update(expectedDigest)
+      .digest("hex");
+
+    const sigBuffer = Buffer.from(receipt.signature, "hex");
+    const expBuffer = Buffer.from(expectedSig, "hex");
+
+    if (
+      sigBuffer.length !== expBuffer.length ||
+      !crypto.timingSafeEqual(sigBuffer, expBuffer)
+    ) {
+      return { isValid: false, reason: "Invalid HMAC signature on certification receipt" };
+    }
+
+    return { isValid: true };
   }
 }
 

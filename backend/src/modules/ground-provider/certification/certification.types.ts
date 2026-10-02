@@ -23,9 +23,16 @@ export interface LayerConformanceResult {
 }
 
 export interface ProviderCertificationReceipt {
+  readonly certificationRunId: string;
   readonly providerId: string;
+  readonly adapterVersion: string;
+  readonly contractVersion: string;
+  readonly certificationSuiteVersion: string;
   readonly certifiedAt: Date;
+  readonly expiresAt: Date;
+  readonly environment: "PRODUCTION" | "STAGING" | "LAB" | "TEST";
   readonly isCertified: boolean;
+  readonly resultsDigest: string;
   readonly summary: {
     readonly semantic: boolean;
     readonly distributed: boolean;
@@ -36,4 +43,11 @@ export interface ProviderCertificationReceipt {
   };
   readonly layerResults: Record<ConformanceLayer, LayerConformanceResult>;
   readonly signature: string;
+}
+
+export class ProviderNotCertifiedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ProviderNotCertifiedError";
+  }
 }
