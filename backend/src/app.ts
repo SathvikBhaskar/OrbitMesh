@@ -9,6 +9,7 @@ import { reservationsRouter } from "./modules/reservations/router";
 import { schedulerRunsRouter } from "./modules/scheduler-runs/router";
 import { orbitalSyncRouter } from "./modules/orbital-data/router";
 import { executionRouter } from "./modules/execution/router";
+import { groundAdapterRouter } from "./modules/ground-adapter/router";
 import pinoHttp from "pino-http";
 import { logger } from "./config/logger";
 import { env } from "./config/env";
@@ -97,6 +98,7 @@ app.use("/api/scheduler-runs", authenticate, authorize(VIEWER_PLUS), schedulerRu
 app.use("/api/mission-tasks", authenticate, authorize(OPERATOR_PLUS), missionTasksRouter);
 app.use("/api/scheduler", authenticate, authorize(OPERATOR_PLUS), schedulerRouter);
 app.use("/api/execution", executionRouter);
+app.use("/api/adapter", groundAdapterRouter);
 
 // Admin routes
 app.use("/api/orbital-sync", authenticate, authorize(VIEWER_PLUS), orbitalSyncRouter);

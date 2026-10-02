@@ -64,6 +64,19 @@ export const executionFailureReasonEnum = pgEnum("execution_failure_reason", [
   "UNKNOWN",
 ]);
 
+export const dispatchHandshakeStateEnum = pgEnum("dispatch_handshake_state", [
+  "PREPARED",
+  "STAGED_ACK",
+  "ARMED",
+  "REJECTED",
+  "EXPIRED",
+]);
+
+export const adapterTransportHealthEnum = pgEnum("adapter_transport_health", [
+  "CONNECTED",
+  "COMMUNICATION_GAP",
+]);
+
 export const satellites = pgTable(
   "satellites",
   {
@@ -455,6 +468,34 @@ export const executionTelemetryEvents = pgTable(
   (table) => ({
     resDispatchIdx: index("execution_telemetry_events_res_dispatch_idx").on(table.reservationId, table.dispatchId),
     resSeqIdx: index("execution_telemetry_events_res_seq_idx").on(table.reservationId, table.sequenceNumber),
+  })
+);
+
+export const dispatchAttempts = pgTable(
+  "dispatch_attempts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    reservationId: uuid("reservation_id")
+      .notNull()
+      .references(() => reservations.id, { onDelete: "cascade" }),
+    dispatchId: varchar("dispatch_id", { length: 64 }).notNull().unique(),
+    attemptNumber: integer("attempt_number").notNull().default(1),
+    state: dispatchHandshakeStateEnum("state").notNull().default("PREPARED"),
+    transportHealth: adapterTransportHealthEnum("transport_health").notNull().default("CONNECTED"),
+    clockOffsetMs: integer("clock_offset_ms").default(0),
+    stagedAt: timestamp("staged_at", { withTimezone: true }),
+    armedAt: timestamp("armed_at", { withTimezone: true }),
+    expiredAt: timestamp("expired_at", { withTimezone: true }),
+    retryCount: integer("retry_count").notNull().default(0),
+    lastError: text("last_error"),
+    metadata: jsonb("metadata").default(sql`'{}'::jsonb`),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    resAttemptIdx: unique("uq_dispatch_attempt_num").on(table.reservationId, table.attemptNumber),
+    resIdIdx: index("idx_dispatch_attempts_res_id").on(table.reservationId),
+    stateIdx: index("idx_dispatch_attempts_state").on(table.state),
   })
 );
 
