@@ -36,6 +36,13 @@
       "when": 1787035575759,
       "tag": "0004_faithful_ulik",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1787039000000,
+      "tag": "0005_station_capabilities",
+      "breakpoints": true
     }
   ]
 }

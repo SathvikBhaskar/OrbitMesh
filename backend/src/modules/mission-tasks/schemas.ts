@@ -8,6 +8,8 @@ export const createMissionTaskSchema = z.object({
     priority: z.number().int().min(1).max(5),
     durationSeconds: z.number().int().min(1),
     deadline: z.string().datetime({ offset: true }).or(z.string().datetime()),
+    requiredFrequencyBand: z.enum(["UHF", "S_BAND", "X_BAND", "KA_BAND", "KU_BAND"]).optional().default("S_BAND"),
+    minDataRateMbps: z.number().positive().optional().default(10.0),
   }),
 });
 
@@ -22,6 +24,8 @@ export const updateMissionTaskSchema = z.object({
     durationSeconds: z.number().int().min(1).optional(),
     deadline: z.string().datetime({ offset: true }).or(z.string().datetime()).optional(),
     status: z.enum(["CANCELLED"]).optional(),
+    requiredFrequencyBand: z.enum(["UHF", "S_BAND", "X_BAND", "KA_BAND", "KU_BAND"]).optional(),
+    minDataRateMbps: z.number().positive().optional(),
   }).strict(),
 });
 

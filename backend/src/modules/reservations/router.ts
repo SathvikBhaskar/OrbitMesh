@@ -138,14 +138,13 @@ reservationsRouter.post("/", authorize(["OPERATOR", "ADMIN"]), validate(previewR
 
     res.status(201).json(newReservation);
   } catch (err: any) {
-    if (err?.name === "ValidationError") {
-      res.status(422).json(err.validationResult);
+    console.error("RESERVATION CREATE ERROR:", err);
+    const valErr = err?.name === "ValidationError" ? err : err?.cause?.name === "ValidationError" ? err.cause : null;
+    if (valErr) {
+      res.status(422).json(valErr.validationResult);
       return;
     }
-    // Drizzle rollback errors that we throw might get wrapped.
-    // If it's a serialization failure (40001), PostgreSQL aborted it.
-    // We'll let the global error handler catch 500s or we could map 40001 to 409 Conflict.
-    if (err.code === '40001') {
+    if (err.code === '40001' || err?.cause?.code === '40001') {
       res.status(409).json({ error: "Concurrent modification conflict. Please try again." });
       return;
     }

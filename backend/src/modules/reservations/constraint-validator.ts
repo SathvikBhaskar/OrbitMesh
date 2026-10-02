@@ -1,5 +1,5 @@
 import { db } from "../../db/client";
-import { missionTasks, contactWindows, reservations } from "../../db/schema";
+import { missionTasks, contactWindows, reservations, groundStations } from "../../db/schema";
 import { eq, and, or, lt, gt, ne } from "drizzle-orm";
 import { ReservationRequest, ValidationResult, ValidationError } from "./types";
 
@@ -36,6 +36,14 @@ export class ConstraintValidationService {
       return { valid: false, errors };
     }
 
+    // 2b. Ground station exists
+    const gsResult = await tx.select().from(groundStations).where(eq(groundStations.id, cw.groundStationId));
+    const gs = gsResult[0];
+    if (!gs) {
+      errors.push({ code: "GROUND_STATION_NOT_FOUND", message: "Ground station not found." });
+      return { valid: false, errors };
+    }
+
     // 3. Satellite matches
     if (task.satelliteId !== cw.satelliteId) {
       errors.push({
@@ -56,6 +64,26 @@ export class ConstraintValidationService {
         code: "GROUND_STATION_MISMATCH",
         message: "Requested groundStationId does not match the contact window's ground station.",
       });
+    }
+
+    // 4b. RF Frequency Band Compatibility (Phase 4.1)
+    if (task.requiredFrequencyBand && gs.supportedFrequencyBands && gs.supportedFrequencyBands.length > 0) {
+      if (!gs.supportedFrequencyBands.includes(task.requiredFrequencyBand)) {
+        errors.push({
+          code: "INCOMPATIBLE_FREQUENCY_BAND",
+          message: `Task requires '${task.requiredFrequencyBand}', but station '${gs.name}' only supports [${gs.supportedFrequencyBands.join(", ")}].`,
+        });
+      }
+    }
+
+    // 4c. Data Rate Compatibility (Phase 4.1 per-contact requirement)
+    if (task.minDataRateMbps && gs.maxDataRateMbps) {
+      if (task.minDataRateMbps > gs.maxDataRateMbps) {
+        errors.push({
+          code: "INSUFFICIENT_STATION_DATA_RATE",
+          message: `Task requires min data rate ${task.minDataRateMbps} Mbps, exceeding station maximum of ${gs.maxDataRateMbps} Mbps.`,
+        });
+      }
     }
 
     // 5 & 6. AOS / LOS
@@ -83,7 +111,7 @@ export class ConstraintValidationService {
       });
     }
 
-    // 9 & 10. Conflict checks
+    // 9 & 10. Conflict and Concurrent Capacity checks
     // We check for any active reservation (not CANCELLED or FAILED) that overlaps with [req.startTime, req.endTime).
     // An overlap occurs when: existing.start < new.end AND existing.end > new.start
     const overlappingReservations = await tx.select().from(reservations).where(
@@ -100,14 +128,13 @@ export class ConstraintValidationService {
     );
 
     let satelliteConflict = false;
-    let stationConflict = false;
+    const overlappingStationReservations = overlappingReservations.filter(
+      (resv: any) => resv.groundStationId === cw.groundStationId
+    );
 
     for (const resv of overlappingReservations) {
       if (resv.satelliteId === cw.satelliteId) {
         satelliteConflict = true;
-      }
-      if (resv.groundStationId === cw.groundStationId) {
-        stationConflict = true;
       }
     }
 
@@ -118,10 +145,15 @@ export class ConstraintValidationService {
       });
     }
 
-    if (stationConflict) {
+    const stationCapacity = gs.maxConcurrentContacts ?? 1;
+    if (overlappingStationReservations.length >= stationCapacity) {
       errors.push({
         code: "STATION_CONFLICT",
         message: "The ground station is already reserved during this time.",
+      });
+      errors.push({
+        code: "GROUND_STATION_CAPACITY_EXCEEDED",
+        message: `Ground station has reached maximum concurrent contacts capacity (${stationCapacity}).`,
       });
     }
 

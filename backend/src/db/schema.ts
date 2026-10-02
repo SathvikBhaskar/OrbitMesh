@@ -69,6 +69,12 @@ export const groundStations = pgTable(
     altitudeM: doublePrecision("altitude_m").notNull().default(0),
     minimumElevationDeg: doublePrecision("minimum_elevation_deg").notNull(),
     status: groundStationStatusEnum("status").notNull(),
+    supportedFrequencyBands: text("supported_frequency_bands")
+      .array()
+      .notNull()
+      .default(sql`ARRAY['S_BAND', 'X_BAND']::text[]`),
+    maxConcurrentContacts: integer("max_concurrent_contacts").notNull().default(1),
+    maxDataRateMbps: doublePrecision("max_data_rate_mbps").notNull().default(100.0),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -89,6 +95,14 @@ export const groundStations = pgTable(
       "altitude_check",
       sql`${table.altitudeM} >= -500 AND ${table.altitudeM} <= 10000`
     ),
+    maxConcurrentContactsCheck: check(
+      "max_concurrent_contacts_check",
+      sql`${table.maxConcurrentContacts} > 0`
+    ),
+    maxDataRateCheck: check(
+      "max_data_rate_check",
+      sql`${table.maxDataRateMbps} > 0`
+    ),
   })
 );
 
@@ -105,6 +119,8 @@ export const missionTasks = pgTable(
     durationSeconds: integer("duration_seconds").notNull(),
     deadline: timestamp("deadline", { withTimezone: true }).notNull(),
     status: missionTaskStatusEnum("status").notNull(),
+    requiredFrequencyBand: text("required_frequency_band").notNull().default("S_BAND"),
+    minDataRateMbps: doublePrecision("min_data_rate_mbps").notNull().default(10.0),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -112,6 +128,7 @@ export const missionTasks = pgTable(
     satelliteIdIdx: index("satellite_id_idx").on(table.satelliteId),
     priorityCheck: check("priority_check", sql`${table.priority} >= 1 AND ${table.priority} <= 10`),
     durationCheck: check("duration_check", sql`${table.durationSeconds} > 0`),
+    minDataRateCheck: check("min_data_rate_check", sql`${table.minDataRateMbps} > 0`),
     idSatDurationUnique: unique("mission_tasks_id_sat_dur_unique").on(table.id, table.satelliteId, table.durationSeconds),
   })
 );
