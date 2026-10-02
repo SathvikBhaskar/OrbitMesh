@@ -1,6 +1,7 @@
 import { IGroundStationProviderAdapter } from "./provider.types";
 import { MockGroundStationProviderAdapter } from "./adapters/mock-provider.adapter";
 import { AwsGroundStationProviderAdapter } from "./adapters/aws-ground-station.adapter";
+import { SleGroundStationProviderAdapter } from "./adapters/sle/sle-provider.adapter";
 import {
   ProviderCertificationReceipt,
   ProviderNotCertifiedError,
@@ -8,7 +9,11 @@ import {
 import { providerCertificationHarness } from "./certification/certification-harness.service";
 import { logger } from "../../config/logger";
 
-export { ProviderNotCertifiedError, AwsGroundStationProviderAdapter };
+export {
+  ProviderNotCertifiedError,
+  AwsGroundStationProviderAdapter,
+  SleGroundStationProviderAdapter,
+};
 
 export class ProviderRegistry {
   private adapters = new Map<string, IGroundStationProviderAdapter>();
