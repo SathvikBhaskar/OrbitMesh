@@ -26,7 +26,8 @@ export class OrbitalDataService {
     // Validate the received TLE data against the expected NORAD ID
     validateTle(orbitalData.tleLine1, orbitalData.tleLine2, sat.noradId);
 
-    // Persist as a new historical record, do not overwrite old ones
+    // Persist as a new historical record, do not overwrite old ones.
+    // If the exact same (satellite_id, tle_epoch) already exists, skip silently — this is idempotent.
     const result = await db.insert(satelliteOrbitalData).values({
       satelliteId: sat.id,
       source: orbitalData.source,
@@ -34,8 +35,18 @@ export class OrbitalDataService {
       tleLine2: orbitalData.tleLine2,
       tleEpoch: orbitalData.tleEpoch,
       receivedAt: new Date()
-    }).returning();
+    }).onConflictDoNothing().returning();
+
+    // If nothing was inserted (duplicate epoch), return the existing record
+    if (!result[0]) {
+      const existing = await db.select().from(satelliteOrbitalData)
+        .where(eq(satelliteOrbitalData.satelliteId, sat.id))
+        .orderBy(satelliteOrbitalData.tleEpoch)
+        .limit(1);
+      return existing[0];
+    }
 
     return result[0];
+
   }
 }

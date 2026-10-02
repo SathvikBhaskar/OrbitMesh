@@ -1,11 +1,12 @@
 import { Router } from "express";
+import { authorize } from "../../middlewares/auth";
 import { CandidateService } from "./candidate-service";
 import { FcfsScheduler } from "./fcfs-scheduler";
 import { PriorityScheduler } from "./priority-scheduler";
 import { MetaScheduler } from "../meta-scheduler/meta-scheduler";
 
 import { db } from "../../db/client";
-import { missionTasks } from "../../db/schema";
+import { missionTasks, scheduleVersions } from "../../db/schema";
 import { eq } from "drizzle-orm";
 import { runSeed } from "../../db/seed";
 
@@ -35,29 +36,62 @@ schedulerRouter.post("/priority/run", async (req, res, next) => {
     next(err);
   }
 });
-
-schedulerRouter.post("/meta/run", async (req, res, next) => {
+schedulerRouter.post("/meta/run", authorize(["OPERATOR", "ADMIN"]), async (req, res, next) => {
   try {
-    // Check if there are any pending tasks before attempting to run
-    const pendingCount = await db
-      .select({ id: missionTasks.id })
-      .from(missionTasks)
-      .where(eq(missionTasks.status, "PENDING"));
+    const result = await metaScheduler.schedulePendingTasks();
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
 
-    if (pendingCount.length === 0) {
-      res.status(400).json({ error: "No pending tasks available to schedule." });
+import { SchedulerWrapperService } from "./scheduler-wrapper.service";
+
+const wrapperService = new SchedulerWrapperService();
+
+schedulerRouter.post("/preview", authorize(["OPERATOR", "ADMIN"]), async (req, res, next) => {
+  try {
+    const { scheduleVersion } = req.body;
+    if (typeof scheduleVersion !== "number") {
+      res.status(400).json({ error: "Invalid scheduleVersion" });
       return;
     }
-
-    const result = await metaScheduler.schedulePendingTasks();
-    
-    // In MetaScheduler, the run output is saved to the db and returned.
-    // The result object already includes the execution status.
-    res.json({
-      ...result,
-      decision: metaScheduler.getDecision()
-    });
+    const result = await wrapperService.preview(scheduleVersion);
+    res.json(result);
+  } catch (err: any) {
+    if (err.code === "SCHEDULE_VERSION_CONFLICT") {
+      res.status(409).json({ error: err.message });
+      return;
+    }
+    console.error("Preview endpoint error:", err);
+    next(err);
+  }
+});
+schedulerRouter.get("/version", async (req, res, next) => {
+  try {
+    const versionResult = await db.select().from(scheduleVersions).limit(1);
+    const currentVersion = versionResult[0]?.version || 0;
+    res.json({ scheduleVersion: currentVersion });
   } catch (err) {
+    next(err);
+  }
+});
+
+schedulerRouter.post("/commit", authorize(["OPERATOR", "ADMIN"]), async (req, res, next) => {
+  try {
+    const { scheduleVersion, proposedReservations } = req.body;
+    if (typeof scheduleVersion !== "number" || !Array.isArray(proposedReservations)) {
+      res.status(400).json({ error: "Invalid scheduleVersion or proposedReservations" });
+      return;
+    }
+    const userId = (req.user as any).sub as string;
+    const result = await wrapperService.commit(proposedReservations, scheduleVersion, userId);
+    res.json(result);
+  } catch (err: any) {
+    if (err.code === "SCHEDULE_VERSION_CONFLICT") {
+      res.status(409).json({ error: err.message });
+      return;
+    }
     next(err);
   }
 });

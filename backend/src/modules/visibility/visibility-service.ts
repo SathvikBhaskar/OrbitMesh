@@ -12,14 +12,17 @@ function radiansToDegrees(radians: number): number {
   return radians * 180 / Math.PI;
 }
 
+import { TelemetrySink } from "../../utils/telemetry";
+
 export class VisibilityService {
-  async getVisibility(satelliteId: string, groundStationId: string, start: Date, end: Date, stepSeconds: number) {
+  async getVisibility(satelliteId: string, groundStationId: string, start: Date, end: Date, stepSeconds: number, telemetry?: TelemetrySink) {
+    const t0 = performance.now();
     // Fetch historical orbital data
     const historicalData = await db
       .select()
       .from(satelliteOrbitalData)
       .where(eq(satelliteOrbitalData.satelliteId, satelliteId))
-      .orderBy(desc(satelliteOrbitalData.receivedAt))
+      .orderBy(desc(satelliteOrbitalData.tleEpoch))
       .limit(1);
 
     if (historicalData.length === 0) {
@@ -67,6 +70,7 @@ export class VisibilityService {
       throw new Error("Too many samples requested");
     }
 
+    const tPropStart = performance.now();
     while (currentTime <= endTime) {
       const currentDate = new Date(currentTime);
       
@@ -122,6 +126,10 @@ export class VisibilityService {
 
       samples.push(sampleResult);
       currentTime += stepSeconds * 1000;
+    }
+    
+    if (telemetry) {
+      telemetry.recordTime("propagation", performance.now() - tPropStart);
     }
 
     return {

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../api/client';
 import { Activity, Satellite, ListTodo, CalendarCheck, Zap } from 'lucide-react';
+import { OrbitalSyncPanel } from './OrbitalSyncPanel';
 
 export const Dashboard = () => {
   const [stats, setStats] = useState({
@@ -95,6 +96,9 @@ export const Dashboard = () => {
           </div>
         </div>
       </div>
+
+      {/* Orbital Data Synchronization */}
+      <OrbitalSyncPanel />
 
       {/* Meta-Scheduler Decision Showcase */}
       <div className="glass-panel" style={{ padding: '2rem', position: 'relative', overflow: 'hidden' }}>

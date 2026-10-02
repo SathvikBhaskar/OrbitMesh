@@ -1,12 +1,14 @@
 import { db, pool } from "./client";
 import { satellites, groundStations, missionTasks, contactWindows, reservations, schedulerRuns, satelliteOrbitalData } from "./schema";
 import { ContactWindowService } from "../modules/contact-windows/contact-window-service";
+import { DemoOrbitalDataProvider, DemoMissionTaskProvider } from "../modules/data-providers/demo-providers";
+import { RealOrbitalDataProvider } from "../modules/data-providers/real-provider";
 import seedrandom from "seedrandom";
 
 const SEED = 202600;
 const rng = seedrandom(SEED.toString());
 
-async function resetDb() {
+export async function resetDb() {
   console.log("Clearing existing data...");
   await db.delete(schedulerRuns);
   await db.delete(reservations);
@@ -21,49 +23,31 @@ export async function runSeed() {
   console.log(`Seeding Database with deterministic seed = ${SEED}...`);
   await resetDb();
 
-  // 1. 8 Satellites
-  const satConfigs = [
-    { noradId: 25544, name: "ISS" },
-    { noradId: 27424, name: "AQUA" },
-    { noradId: 25994, name: "TERRA" },
-    { noradId: 39084, name: "LANDSAT 8" },
-    { noradId: 43013, name: "NOAA 20" },
-    { noradId: 33591, name: "NOAA 19" },
-    { noradId: 40069, name: "METOP-B" },
-    { noradId: 28654, name: "NOAA 18" },
-  ];
+  // 1. Acquire and Insert Satellites
+  const dataMode = process.env.DATA_PROVIDER || "demo";
+  console.log(`DATA_PROVIDER is set to '${dataMode}'`);
   
-  const satsToInsert = satConfigs.map(s => ({ ...s, status: "ACTIVE" as const }));
-  const sats = await db.insert(satellites).values(satsToInsert).returning();
+  const orbitalProvider = dataMode === "real" 
+    ? new RealOrbitalDataProvider() 
+    : new DemoOrbitalDataProvider(SEED);
+  const taskProvider = new DemoMissionTaskProvider(SEED);
+
+  const satConfigs = await orbitalProvider.getSatellites();
+  const sats = await db.insert(satellites).values(satConfigs).returning();
   console.log(`Seeded ${sats.length} satellites.`);
 
-  // 2. 4 Ground Stations
-  const stationConfigs = [
-    { code: "SVAL", name: "Svalbard Satellite Station", latitude: 78.2297, longitude: 15.4077 },
-    { code: "MCM", name: "McMurdo Ground Station", latitude: -77.8463, longitude: 166.6682 },
-    { code: "WAL", name: "Wallops Command and Data", latitude: 37.9401, longitude: -75.4663 },
-    { code: "FBK", name: "Fairbanks Command and Data", latitude: 64.9774, longitude: -147.5104 },
-  ];
-
-  const stationsToInsert = stationConfigs.map(s => ({ ...s, minimumElevationDeg: 10, status: "AVAILABLE" as const }));
-  const stations = await db.insert(groundStations).values(stationsToInsert).returning();
+  // 2. Acquire and Insert Ground Stations
+  const stationConfigs = await orbitalProvider.getGroundStations();
+  const stations = await db.insert(groundStations).values(stationConfigs).returning();
   console.log(`Seeded ${stations.length} ground stations.`);
 
-  // 3. Insert Dummy TLEs for deterministic contact windows
+  // 3. Acquire and Insert TLEs
   console.log("Inserting deterministic TLEs...");
-  for (const sat of sats) {
-    if (!sat) continue;
-    await db.insert(satelliteOrbitalData).values({
-      satelliteId: sat.id,
-      source: "CELESTRAK",
-      tleLine1: `1 ${String(sat.noradId).padEnd(5, ' ')}U 98067A   26001.00000000  .00000000  00000-0  00000-0 0  9999`,
-      tleLine2: `2 ${String(sat.noradId).padEnd(5, ' ')}  51.6400 ${Math.floor(rng() * 360).toFixed(4).padStart(8, ' ')} 0000000   0.0000   0.0000 15.50000000    00`,
-      tleEpoch: new Date("2026-01-01T00:00:00Z"),
-      receivedAt: new Date()
-    });
-  }
+  const satIds = sats.map(s => s.id);
+  const orbitalData = await orbitalProvider.getOrbitalData(satIds);
+  await db.insert(satelliteOrbitalData).values(orbitalData);
 
-  // 4. Generate Contact Windows
+  // 4. Generate Contact Windows using unchanged Engine
   console.log("Pre-calculating contact windows for the next 24 hours...");
   const cwService = new ContactWindowService();
   const start = new Date("2026-01-01T00:00:00Z");
@@ -83,28 +67,9 @@ export async function runSeed() {
   }
   console.log(`Generated ${totalWindows} contact windows.`);
 
-  // 5. ~50 Mission Tasks
+  // 5. Acquire and Insert Mission Tasks
   console.log("Generating 50 mission tasks...");
-  const tasksToInsert = [];
-  
-  for (let i = 1; i <= 50; i++) {
-    const sat = sats[Math.floor(rng() * sats.length)];
-    if (!sat) continue;
-    
-    const priority = Math.floor(rng() * 10) + 1;
-    const duration = 60 + Math.floor(rng() * 540);
-    const deadlineOffsetMs = (2 + rng() * 22) * 60 * 60 * 1000;
-    const deadline = new Date(start.getTime() + deadlineOffsetMs);
-    
-    tasksToInsert.push({
-      satelliteId: sat.id,
-      name: `Observation Task ${String(i).padStart(3, '0')}`,
-      priority,
-      durationSeconds: duration,
-      deadline,
-      status: "PENDING" as const
-    });
-  }
+  const tasksToInsert = await taskProvider.getMissionTasks(satIds, start);
 
   const generatedTasks = await db.insert(missionTasks).values(tasksToInsert).returning();
   console.log(`Seeded ${generatedTasks.length} mission tasks.`);

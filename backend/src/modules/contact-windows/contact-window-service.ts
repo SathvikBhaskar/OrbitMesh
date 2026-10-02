@@ -1,10 +1,12 @@
 import { db } from "../../db/client";
 import { contactWindows, satelliteOrbitalData } from "../../db/schema";
-import { eq, and, gte, lte } from "drizzle-orm";
+import { eq, and, gte, lte, desc } from "drizzle-orm";
 import { VisibilityService } from "../visibility/visibility-service";
 import { WindowDetector } from "./window-detector";
 import { Refinement } from "./refinement";
 import { CoarseWindow } from "./types";
+
+import { TelemetrySink } from "../../utils/telemetry";
 
 export class ContactWindowService {
   private visibilityService = new VisibilityService();
@@ -16,7 +18,8 @@ export class ContactWindowService {
     groundStationId: string,
     start: Date,
     end: Date,
-    stepSeconds: number
+    stepSeconds: number,
+    telemetry?: TelemetrySink
   ) {
     if (start >= end) throw new Error("start must be before end");
     if (stepSeconds < 1 || stepSeconds > 300) throw new Error("stepSeconds must be between 1 and 300");
@@ -27,7 +30,7 @@ export class ContactWindowService {
       .select()
       .from(satelliteOrbitalData)
       .where(eq(satelliteOrbitalData.satelliteId, satelliteId))
-      .orderBy(satelliteOrbitalData.tleEpoch)
+      .orderBy(desc(satelliteOrbitalData.tleEpoch))
       .limit(1);
 
     if (latestOrbital.length === 0) {
@@ -40,7 +43,8 @@ export class ContactWindowService {
       groundStationId,
       start,
       end,
-      stepSeconds
+      stepSeconds,
+      telemetry
     );
 
     // Detect coarse windows
@@ -54,7 +58,8 @@ export class ContactWindowService {
         groundStationId,
         t,
         t,
-        stepSeconds // doesn't matter for 0-duration range
+        stepSeconds, // doesn't matter for 0-duration range
+        telemetry
       );
       return samples[0] ? samples[0].visible : false;
     };
@@ -66,6 +71,7 @@ export class ContactWindowService {
       let aos = coarse.observationStart;
       let los = coarse.observationEnd;
 
+      const tRefineStart = performance.now();
       if (coarse.aosBracket) {
         aos = await this.refinement.refineTransition(
           coarse.aosBracket.before,
@@ -85,6 +91,7 @@ export class ContactWindowService {
           1 // 1-second tolerance
         );
       }
+      if (telemetry) telemetry.recordTime("refinement", performance.now() - tRefineStart);
 
       // Truncate milliseconds to ensure exact integer match with duration_seconds in Postgres
       aos.setMilliseconds(0);
@@ -94,6 +101,7 @@ export class ContactWindowService {
       const durationSeconds = Math.round((los.getTime() - aos.getTime()) / 1000);
       if (durationSeconds <= 0) continue; // safety fallback for weird bracket collapse
 
+      const tDbStart = performance.now();
       // Check idempotency (exact same window generation config)
       const existing = await db
         .select()
@@ -124,6 +132,7 @@ export class ContactWindowService {
       } else {
         recordId = existing[0]!.id;
       }
+      if (telemetry) telemetry.recordTime("database", performance.now() - tDbStart);
 
       results.push({
         id: recordId,
@@ -137,6 +146,7 @@ export class ContactWindowService {
       });
     }
 
+    if (telemetry) telemetry.increment("contact_windows_generated", results.length);
     return { windows: results };
   }
 }

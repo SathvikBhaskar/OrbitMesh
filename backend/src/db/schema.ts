@@ -12,10 +12,13 @@ import {
   unique,
   uniqueIndex,
   foreignKey,
+  boolean,
+  jsonb,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
 export const orbitalDataSourceEnum = pgEnum("orbital_data_source", ["CELESTRAK"]);
+export const userRoleEnum = pgEnum("user_role", ["VIEWER", "OPERATOR", "ADMIN"]);
 
 export const satelliteStatusEnum = pgEnum("satellite_status", ["ACTIVE", "INACTIVE"]);
 export const groundStationStatusEnum = pgEnum("ground_station_status", [
@@ -38,6 +41,7 @@ export const executionStatusEnum = pgEnum("execution_status", [
   "FAILED_EXECUTION",
   "PARTIAL",
 ]);
+export const orbitalSyncStatus = pgEnum("orbital_sync_status", ["RUNNING", "SUCCESS", "FAILED", "SKIPPED"]);
 
 export const satellites = pgTable(
   "satellites",
@@ -128,6 +132,7 @@ export const satelliteOrbitalData = pgTable(
   },
   (table) => ({
     idSatUnique: unique("satellite_orbital_data_id_sat_unique").on(table.id, table.satelliteId),
+    satEpochUnique: unique("satellite_orbital_data_sat_epoch_unique").on(table.satelliteId, table.tleEpoch),
   })
 );
 
@@ -171,6 +176,13 @@ export const contactWindows = pgTable(
       table.aos,
       table.los
     ),
+    stationSatAosLosOrbitalUnique: unique("contact_windows_station_sat_aos_los_orbital_unique").on(
+      table.groundStationId,
+      table.satelliteId,
+      table.aos,
+      table.los,
+      table.orbitalDataId
+    ),
   })
 );
 
@@ -182,6 +194,8 @@ export const reservationStatusEnum = pgEnum("reservation_status", [
   "COMPLETED",
   "FAILED",
 ]);
+
+export const reservationSourceEnum = pgEnum("reservation_source", ["AUTOMATED", "MANUAL"]);
 
 // Reservations Table
 export const reservations = pgTable(
@@ -198,6 +212,8 @@ export const reservations = pgTable(
     allocatedStart: timestamp("allocated_start", { withTimezone: true }).notNull(),
     allocatedEnd: timestamp("allocated_end", { withTimezone: true }).notNull(),
     status: reservationStatusEnum("status").default("PENDING").notNull(),
+    source: reservationSourceEnum("source").default("AUTOMATED").notNull(),
+    locked: boolean("locked").default(false).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
@@ -250,4 +266,76 @@ export const schedulerRuns = pgTable("scheduler_runs", {
   unscheduledCount: integer("unscheduled_count"),
   executionStatus: executionStatusEnum("execution_status").notNull(),
   errorMessage: text("error_message"),
+});
+
+export const orbitalSyncRuns = pgTable("orbital_sync_runs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+  status: orbitalSyncStatus("status").notNull(),
+  provider: varchar("provider", { length: 255 }).notNull(),
+  requestedSatelliteCount: integer("requested_satellite_count"),
+  fetchedCount: integer("fetched_count"),
+  discoveredCount: integer("discovered_count"),
+  updatedCount: integer("updated_count"),
+  ignoredCount: integer("ignored_count"),
+  rejectedCount: integer("rejected_count"),
+  regeneratedSatelliteCount: integer("regenerated_satellite_count"),
+  regeneratedWindowCount: integer("regenerated_window_count"),
+  errorMessage: text("error_message"),
+});
+
+export const users = pgTable("users", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  email: varchar("email", { length: 255 }).notNull().unique(),
+  passwordHash: varchar("password_hash", { length: 255 }).notNull(),
+  role: userRoleEnum("role").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const refreshTokens = pgTable(
+  "refresh_tokens",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    tokenHash: varchar("token_hash", { length: 255 }).notNull().unique(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    userIdIdx: index("refresh_tokens_user_id_idx").on(table.userId),
+    tokenHashIdx: index("refresh_tokens_token_hash_idx").on(table.tokenHash),
+  })
+);
+
+export const scheduleVersions = pgTable("schedule_versions", {
+  id: integer("id").primaryKey().default(1),
+  version: integer("version").notNull().default(1),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const scheduleAuditLog = pgTable("schedule_audit_log", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "restrict" }),
+  entityType: varchar("entity_type", { length: 50 }).notNull(),
+  entityId: varchar("entity_id", { length: 255 }).notNull(),
+  action: varchar("action", { length: 50 }).notNull(),
+  beforeState: jsonb("before_state"),
+  afterState: jsonb("after_state"),
+  reason: text("reason"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const scheduleProposals = pgTable("schedule_proposals", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  scheduleVersion: integer("schedule_version").notNull(),
+  data: jsonb("data").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
 });

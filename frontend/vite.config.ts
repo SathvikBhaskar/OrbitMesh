@@ -1,9 +1,13 @@
-import * as reactPlugin from 'vite-plugin-react'
-import type { UserConfig } from 'vite'
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import cesium from 'vite-plugin-cesium';
 
-const config: UserConfig = {
-  jsx: 'react',
-  plugins: [reactPlugin]
-}
-
-export default config
+export default defineConfig({
+  plugins: [
+    react(),
+    cesium()
+  ],
+  worker: {
+    format: 'es'
+  }
+});

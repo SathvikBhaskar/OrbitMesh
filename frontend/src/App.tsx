@@ -5,12 +5,17 @@ import { api } from './api/client';
 import { Dashboard } from './components/Dashboard';
 import { MissionTasks } from './components/MissionTasks';
 import { ContactWindows } from './components/ContactWindows';
-import { ReservationTimeline } from './components/ReservationTimeline';
+import { GanttTimeline } from './components/GanttTimeline';
 import { SchedulerRun } from './components/SchedulerRun';
 import { Experiments } from './components/Experiments';
+import { Satellites } from './components/Satellites';
+import { OrbitalMap } from './components/orbital-map/OrbitalMap';
+import { Login } from './components/Login';
 
 function App() {
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isInitializing, setIsInitializing] = useState(true);
+  const [activeTab, setActiveTab] = useState('map');
   const [isScheduling, setIsScheduling] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
   
@@ -28,8 +33,18 @@ function App() {
   };
 
   useEffect(() => {
-    fetchPendingCount();
-  }, [activeTab]); // Refresh when tabs change
+    // Check if we have a valid session
+    api.get('/auth/me')
+      .then(() => setIsAuthenticated(true))
+      .catch(() => setIsAuthenticated(false))
+      .finally(() => setIsInitializing(false));
+  }, []);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchPendingCount();
+    }
+  }, [activeTab, isAuthenticated]); // Refresh when tabs change
 
   const handleRunScheduler = async () => {
     if (pendingCount === 0) return;
@@ -88,10 +103,20 @@ function App() {
       case 'windows': return <ContactWindows />;
       case 'timeline': return <ReservationTimeline />;
       case 'inspector': return <SchedulerRun />;
+      case 'satellites': return <Satellites />;
+      case 'map': return <OrbitalMap />;
       case 'experiments': return <Experiments />;
       default: return <Dashboard />;
     }
   };
+
+  if (isInitializing) {
+    return <div style={{ display: 'flex', height: '100vh', alignItems: 'center', justifyContent: 'center' }}>Initializing...</div>;
+  }
+
+  if (!isAuthenticated) {
+    return <Login onLogin={() => setIsAuthenticated(true)} />;
+  }
 
   return (
     <div className="app-container">
@@ -108,6 +133,9 @@ function App() {
         </div>
 
         <nav style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+          <div className={`nav-item ${activeTab === 'map' ? 'active' : ''}`} onClick={() => setActiveTab('map')}>
+            <Satellite size={18} /> Orbital Map
+          </div>
           <div className={`nav-item ${activeTab === 'dashboard' ? 'active' : ''}`} onClick={() => setActiveTab('dashboard')}>
             <LayoutDashboard size={18} /> Dashboard
           </div>
@@ -116,6 +144,9 @@ function App() {
           </div>
           <div className={`nav-item ${activeTab === 'windows' ? 'active' : ''}`} onClick={() => setActiveTab('windows')}>
             <Satellite size={18} /> Contact Windows
+          </div>
+          <div className={`nav-item ${activeTab === 'satellites' ? 'active' : ''}`} onClick={() => setActiveTab('satellites')}>
+            <Satellite size={18} /> Satellite Catalog
           </div>
           <div className={`nav-item ${activeTab === 'timeline' ? 'active' : ''}`} onClick={() => setActiveTab('timeline')}>
             <Clock size={18} /> Reservation Timeline
@@ -172,15 +203,17 @@ function App() {
       </aside>
 
       {/* Main Content Area */}
-      <main className="main-content">
-        <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+      <main className="main-content" style={{ display: 'flex', flexDirection: 'column' }}>
+        <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem', flexShrink: 0 }}>
           <h1 style={{ margin: 0 }}>
             {activeTab === 'dashboard' && 'Platform Overview'}
             {activeTab === 'tasks' && 'Mission Tasks'}
             {activeTab === 'windows' && 'Contact Windows'}
-            {activeTab === 'timeline' && 'Reservation Timeline'}
+            {activeTab === 'timeline' && 'Schedule Timeline'}
             {activeTab === 'inspector' && 'Scheduler Inspection'}
-            {activeTab === 'experiments' && 'Frozen Validation Results'}
+            {activeTab === 'satellites' && 'Satellite Catalog'}
+            {activeTab === 'map' && 'Orbital Network Map (Cesium)'}
+            {activeTab === 'experiments' && 'Experiments'}
           </h1>
           
           <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
@@ -191,7 +224,22 @@ function App() {
           </div>
         </header>
 
-        {renderContent()}
+        <main style={{ flex: 1, display: 'flex', flexDirection: 'column', overflowY: 'auto', position: 'relative', zIndex: 10 }}>
+          {/* Dynamic component rendering */}
+          {activeTab === 'dashboard' && <Dashboard />}
+          {activeTab === 'tasks' && <MissionTasks />}
+          {activeTab === 'windows' && <ContactWindows />}
+          {activeTab === 'timeline' && <GanttTimeline />}
+          {activeTab === 'inspector' && <SchedulerRun />}
+          {activeTab === 'satellites' && <Satellites />}
+          {/* OrbitalMap is always mounted (never conditionally destroyed) to preserve
+              the Cesium WebGL context and imagery layers across tab switches.
+              We use CSS visibility to show/hide it instead. */}
+          <div style={{ display: activeTab === 'map' ? 'flex' : 'none', flex: 1, flexDirection: 'column', minHeight: 0 }}>
+            <OrbitalMap />
+          </div>
+          {activeTab === 'experiments' && <Experiments />}
+        </main>
       </main>
     </div>
   );

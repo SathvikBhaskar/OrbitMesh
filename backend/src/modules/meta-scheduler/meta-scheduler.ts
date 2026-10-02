@@ -10,6 +10,8 @@ import { db } from '../../db/client';
 import { missionTasks, contactWindows, reservations, schedulerRuns } from '../../db/schema';
 import { sql } from 'drizzle-orm';
 import { Task, ContactWindow, Reservation, WorkloadFeatures } from './types';
+import { logger } from '../../config/logger';
+import { schedulerRunsTotal, schedulerDurationMs } from '../../config/metrics';
 
 export class MetaScheduler implements SchedulerPolicy {
   public static _mockExtractionFailure = false;
@@ -64,7 +66,7 @@ export class MetaScheduler implements SchedulerPolicy {
       });
     } catch (e) {
       // Do not crash the application if observability write fails!
-      console.error("Failed to persist MetaScheduler execution trace:", e);
+      logger.error({ err: e }, "Failed to persist MetaScheduler execution trace");
     }
   }
 
@@ -134,8 +136,19 @@ export class MetaScheduler implements SchedulerPolicy {
 
     let result: SchedulerResult;
     try {
+      const scheduleStart = performance.now();
       result = await underlyingScheduler.schedulePendingTasks();
+      const durationMs = performance.now() - scheduleStart;
+      
+      // Track duration and success run
+      if (this.runType === "PRODUCTION") {
+        schedulerDurationMs.observe(durationMs);
+        schedulerRunsTotal.inc({ result: "success" });
+      }
     } catch (err: any) {
+      if (this.runType === "PRODUCTION") {
+        schedulerRunsTotal.inc({ result: "error" });
+      }
       await this.persistRunTrace({
         startedAt,
         completedAt: new Date(),

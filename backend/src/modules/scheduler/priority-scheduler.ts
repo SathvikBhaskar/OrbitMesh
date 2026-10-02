@@ -1,4 +1,4 @@
-import { db } from "../../db/client";
+import { db, txContext } from "../../db/client";
 import { missionTasks, reservations } from "../../db/schema";
 import { eq, asc, desc, and } from "drizzle-orm";
 import { CandidateService } from "./candidate-service";
@@ -9,7 +9,8 @@ export class PriorityScheduler implements SchedulerPolicy {
   constructor(private candidateService: CandidateService) {}
 
   async schedulePendingTasks(): Promise<SchedulerResult> {
-    const tasks = await db.select()
+    const dbOrTx = txContext.getStore() || db;
+    const tasks = await dbOrTx.select()
       .from(missionTasks)
       .where(eq(missionTasks.status, "PENDING"))
       .orderBy(
@@ -69,7 +70,8 @@ export class PriorityScheduler implements SchedulerPolicy {
           const interval = intervalResult;
           
           try {
-            const reservationId = await db.transaction(async (tx) => {
+            const dbOrTx = txContext.getStore() || db;
+            const reservationId = await dbOrTx.transaction(async (tx: any) => {
               const updateResult = await tx.update(missionTasks)
                 .set({ status: "SCHEDULED" })
                 .where(and(eq(missionTasks.id, task.id), eq(missionTasks.status, "PENDING")))
@@ -106,9 +108,15 @@ export class PriorityScheduler implements SchedulerPolicy {
               break windowLoop;
             }
             
-            if (error.message.includes("exclude_overlapping_reservations_active") || error.message.includes("one_active_reservation_per_task")) {
+            const errMsg = error.message || "";
+            const causeMsg = error.cause?.message || "";
+            if (errMsg.includes("exclude_overlapping_reservations_active") || causeMsg.includes("exclude_overlapping_reservations_active")) {
               retries++;
               continue; 
+            }
+            if (errMsg.includes("one_active_reservation_per_task") || causeMsg.includes("one_active_reservation_per_task")) {
+              taskScheduled = true;
+              break windowLoop;
             }
 
             throw error; 

@@ -1,6 +1,6 @@
 # The Meta-Scheduler
 
-The Meta-Scheduler is the core intelligent router of OrbitMesh. Rather than acting as a static policy, it analyzes the incoming workload in real-time and dynamically selects the mathematically optimal algorithm.
+The Meta-Scheduler is the core intelligent router of OrbitMesh. Rather than acting as a static policy, it analyzes the incoming workload dynamically at scheduling time and selects the mathematically optimal algorithm.
 
 ## Feature Extraction
 Before scheduling, the Meta-Scheduler computes:
