@@ -283,14 +283,20 @@ describe("Phase 5.8.2-A: AWS Ground Station Commercial Adapter", () => {
       expect(status.state).toBe("STAGED");
       expect(status.carrierLocked).toBe(false);
 
-      // 2. PREPASS -> ARMED, carrierLocked: true
+      // 2. PREPASS -> ARMED (carrierLocked: false by default, never manufactured from lifecycle state)
       simulatedClient.advanceContactState(contactId, "PREPASS");
       status = await awsAdapter.pollPassStatus(dispatchId, context);
       expect(status.state).toBe("ARMED");
-      expect(status.carrierLocked).toBe(true);
+      expect(status.carrierLocked).toBe(false);
 
-      // 3. PASS -> TRACKING, carrierLocked: true
-      simulatedClient.advanceContactState(contactId, "PASS", 25000000);
+      // 3. PASS without explicit carrier lock telemetry -> TRACKING, carrierLocked: false
+      simulatedClient.advanceContactState(contactId, "PASS", 0, false);
+      status = await awsAdapter.pollPassStatus(dispatchId, context);
+      expect(status.state).toBe("TRACKING");
+      expect(status.carrierLocked).toBe(false);
+
+      // 4. PASS WITH verified RF lock telemetry -> TRACKING, carrierLocked: true
+      simulatedClient.advanceContactState(contactId, "PASS", 25000000, true);
       status = await awsAdapter.pollPassStatus(dispatchId, context);
       expect(status.state).toBe("TRACKING");
       expect(status.carrierLocked).toBe(true);
@@ -352,6 +358,22 @@ describe("Phase 5.8.2-A: AWS Ground Station Commercial Adapter", () => {
       expect(allStations.length).toBeGreaterThan(0);
       const contact = await simulatedClient.describeContact(first.providerDispatchRef);
       expect(contact).not.toBeNull();
+    });
+
+    it("generates bounded collision-resistant clientToken (<= 64 chars) with deterministic hash suffix for long keys", async () => {
+      const dispatchId = `disp-long-${Date.now()}`;
+      const longIdempotencyKey = "very-long-idempotency-key-that-exceeds-the-sixty-four-character-limit-imposed-by-aws-api-1234567890";
+      const manifest = createMockManifest(dispatchId);
+      const context: DispatchContext = {
+        ...createMockContext(dispatchId),
+        idempotencyKey: longIdempotencyKey,
+      };
+
+      const receipt = await awsAdapter.stagePass(manifest, context);
+      const contact = await simulatedClient.describeContact(receipt.providerDispatchRef);
+      expect(contact!.clientToken.length).toBeLessThanOrEqual(64);
+      const expectedSuffix = crypto.createHash("sha256").update(longIdempotencyKey).digest("hex").slice(0, 16);
+      expect(contact!.clientToken).toContain(expectedSuffix);
     });
   });
 
@@ -427,7 +449,21 @@ describe("Phase 5.8.2-A: AWS Ground Station Commercial Adapter", () => {
       const res = await awsAdapter.validateCapabilities("Ohio 1", req);
       expect(res.isCompatible).toBe(false);
       expect(res.maxDataRateFeasible).toBe(false);
-      expect(res.reason).toContain("exceeds AWS Ground Station max rate");
+      expect(res.reason).toContain("exceeds station Ohio 1 max rate");
+    });
+
+    it("dynamically validates capabilities against specific AWS ground stations (e.g. Punta Arenas 1)", async () => {
+      // Punta Arenas 1 has max data rate 500 Mbps in AWS station catalog
+      const reqOverLimit: RfRequirements = { frequencyBand: "S_BAND", dataRateMbps: 800 };
+      const resOver = await awsAdapter.validateCapabilities("Punta Arenas 1", reqOverLimit);
+      expect(resOver.isCompatible).toBe(false);
+      expect(resOver.maxDataRateFeasible).toBe(false);
+      expect(resOver.reason).toContain("exceeds station Punta Arenas 1 max rate 500Mbps");
+
+      const reqWithin: RfRequirements = { frequencyBand: "S_BAND", dataRateMbps: 400 };
+      const resWithin = await awsAdapter.validateCapabilities("Punta Arenas 1", reqWithin);
+      expect(resWithin.isCompatible).toBe(true);
+      expect(resWithin.maxDataRateFeasible).toBe(true);
     });
   });
 

@@ -13,6 +13,7 @@
  * - Does NOT alter core OrbitMesh execution, outbox, or scheduling semantics.
  */
 
+import crypto from "crypto";
 import {
   IGroundStationProviderAdapter,
   DispatchContext,
@@ -123,8 +124,13 @@ export class AwsGroundStationProviderAdapter
     }
 
     // 2. Map idempotencyKey to AWS clientToken (must match ^[A-Za-z0-9-_]+$, max 64 chars)
+    // Collision-resistant mapping: if rawToken > 64 chars, append deterministic SHA256 digest suffix
     const rawToken = idempotencyKey || `${manifest.reservationId}:${dispatchId}`;
-    const clientToken = rawToken.replace(/[^A-Za-z0-9-_]/g, "-").slice(0, 64);
+    const sanitized = rawToken.replace(/[^A-Za-z0-9-_]/g, "-");
+    const clientToken =
+      sanitized.length <= 64
+        ? sanitized
+        : `${sanitized.slice(0, 47)}-${crypto.createHash("sha256").update(rawToken).digest("hex").slice(0, 16)}`;
 
     // 3. Resolve AWS parameters
     const groundStation = this.resolveGroundStation(context.stationCode);
@@ -302,13 +308,26 @@ export class AwsGroundStationProviderAdapter
   /**
    * Capability validation: Validates whether frequency band and data rate
    * are feasible on AWS Ground Station antennas.
+   * Dynamically resolves against station catalog where available.
    */
   async validateCapabilities(
     stationId: string,
     requirements: RfRequirements
   ): Promise<CapabilityValidationResult> {
-    const supported = this.options.supportedBands || ["S_BAND", "X_BAND"];
-    const maxRate = this.options.maxDataRateMbps || 1200;
+    const stationCatalog = await this.client.listGroundStations();
+    const matchedStation = stationCatalog.find(
+      (s) =>
+        s.groundStationId === stationId ||
+        s.groundStationName.toLowerCase() === stationId.toLowerCase() ||
+        this.stationCodeMap[stationId] === s.groundStationName
+    );
+
+    const supported = matchedStation
+      ? matchedStation.supportedBands
+      : this.options.supportedBands || ["S_BAND", "X_BAND"];
+    const maxRate = matchedStation
+      ? matchedStation.maxDataRateMbps
+      : this.options.maxDataRateMbps || 1200;
 
     const bandOk = supported.includes(requirements.frequencyBand);
     const rateOk = requirements.dataRateMbps <= maxRate;
@@ -320,16 +339,24 @@ export class AwsGroundStationProviderAdapter
       reason: !bandOk
         ? `AWS Ground Station does not support frequency band ${requirements.frequencyBand} at station ${stationId}`
         : !rateOk
-        ? `Data rate ${requirements.dataRateMbps}Mbps exceeds AWS Ground Station max rate ${maxRate}Mbps`
+        ? `Data rate ${requirements.dataRateMbps}Mbps exceeds station ${stationId} max rate ${maxRate}Mbps`
         : undefined,
     };
   }
 
   /**
    * Translates AWS contact status into OrbitMesh canonical pass status.
+   *
+   * Architectural Safety Invariant:
+   * "execution state ≠ transport state ≠ physical telemetry"
+   * Physical RF carrier lock must NEVER be manufactured solely from scheduler/lifecycle
+   * state (PREPASS or PASS). It is strictly true only when the provider supplies
+   * authoritative RF carrier lock / telemetry evidence.
    */
   private mapAwsStatusToCanonical(contact: AwsContactResponse): PassStatusSnapshot {
     const lastContactAt = new Date(contact.startTime);
+    const isCarrierLocked = contact.carrierLocked === true;
+
     switch (contact.contactStatus) {
       case "SCHEDULING":
       case "SCHEDULED":
@@ -342,14 +369,16 @@ export class AwsGroundStationProviderAdapter
       case "PREPASS":
         return {
           state: "ARMED",
-          carrierLocked: true,
+          // Prepass represents antenna slewing/calibration; carrierLocked requires explicit RF evidence
+          carrierLocked: isCarrierLocked,
           bytesRecorded: 0,
           lastContactAt: new Date(),
         };
       case "PASS":
         return {
           state: "TRACKING",
-          carrierLocked: true,
+          // Physical carrier lock is strictly dependent on provider RF telemetry evidence
+          carrierLocked: isCarrierLocked,
           bytesRecorded: contact.dataBytes || 0,
           lastContactAt: new Date(),
         };

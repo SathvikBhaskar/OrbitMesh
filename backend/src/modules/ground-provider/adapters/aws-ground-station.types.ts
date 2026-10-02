@@ -41,6 +41,7 @@ export interface AwsContactResponse {
   clientToken: string;
   tags?: Record<string, string>;
   dataBytes?: number;
+  carrierLocked?: boolean;
   errorMessage?: string;
   creationTime: string;
 }

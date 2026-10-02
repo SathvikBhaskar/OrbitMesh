@@ -152,13 +152,17 @@ export class AwsGroundStationSimulatedClient implements IAwsGroundStationClient 
   public advanceContactState(
     contactId: string,
     status: AwsContactStatus,
-    dataBytes: number = 0
+    dataBytes: number = 0,
+    carrierLocked?: boolean
   ): void {
     const contact = this.contactsById.get(contactId);
     if (contact) {
       contact.contactStatus = status;
       if (dataBytes > 0) {
         contact.dataBytes = dataBytes;
+      }
+      if (carrierLocked !== undefined) {
+        contact.carrierLocked = carrierLocked;
       }
     }
   }
