@@ -103,6 +103,12 @@ export const executionInterlockStateEnum = pgEnum("execution_interlock_state", [
   "INTERLOCK_FAILED",
 ]);
 
+export const stationCredentialStatusEnum = pgEnum("station_credential_status", [
+  "ACTIVE",
+  "ROTATING",
+  "REVOKED",
+]);
+
 export const satellites = pgTable(
   "satellites",
   {
@@ -556,6 +562,27 @@ export const outboundDispatchMessages = pgTable(
     pendingIdx: index("outbound_dispatch_pending_idx").on(table.status, table.nextAttemptAt),
     resIdx: index("outbound_dispatch_res_idx").on(table.reservationId),
     dispIdx: index("outbound_dispatch_disp_idx").on(table.dispatchId),
+  })
+);
+
+export const groundStationCredentials = pgTable(
+  "ground_station_credentials",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    groundStationId: uuid("ground_station_id")
+      .notNull()
+      .references(() => groundStations.id, { onDelete: "cascade" }),
+    keyId: varchar("key_id", { length: 64 }).notNull().unique(),
+    secretKey: varchar("secret_key", { length: 255 }).notNull(),
+    status: stationCredentialStatusEnum("status").default("ACTIVE").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  },
+  (table) => ({
+    stationIdx: index("idx_gs_credentials_station").on(table.groundStationId),
+    keyIdIdx: index("idx_gs_credentials_key_id").on(table.keyId),
+    statusIdx: index("idx_gs_credentials_status").on(table.status),
   })
 );
 

@@ -66,11 +66,18 @@ describe("Phase 5.7: Workstream 5.7.1 — Transactional Outbox & Durable Deliver
   });
 
   afterAll(async () => {
-    await db.delete(outboundDispatchMessages);
-    await db.delete(dispatchAttempts);
-    await db.delete(reservations);
-    await db.delete(contactWindows);
-    await db.delete(missionTasks);
+    const resList = await db
+      .select({ id: reservations.id })
+      .from(reservations)
+      .where(eq(reservations.satelliteId, satId));
+    const resIds = resList.map((r) => r.id);
+    if (resIds.length > 0) {
+      await db.delete(outboundDispatchMessages).where(inArray(outboundDispatchMessages.reservationId, resIds));
+      await db.delete(dispatchAttempts).where(inArray(dispatchAttempts.reservationId, resIds));
+      await db.delete(reservations).where(inArray(reservations.id, resIds));
+    }
+    await db.delete(contactWindows).where(eq(contactWindows.satelliteId, satId));
+    await db.delete(missionTasks).where(eq(missionTasks.satelliteId, satId));
     await db.delete(satelliteOrbitalData).where(eq(satelliteOrbitalData.satelliteId, satId));
     await db.delete(satellites).where(eq(satellites.id, satId));
     await db.delete(groundStations).where(eq(groundStations.id, gsId));
