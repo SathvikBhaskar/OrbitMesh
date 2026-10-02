@@ -192,3 +192,4 @@ export class GroundSecurityService {
 }
 
 export const groundSecurityService = new GroundSecurityService();
+export const groundStationCryptoService = groundSecurityService;
