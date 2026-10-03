@@ -9,26 +9,27 @@ interface TaskLayerProps {
 }
 
 export const TaskLayer: React.FC<TaskLayerProps> = ({ tasks, satellites }) => {
-  const activeTasks = tasks.filter(t => t.status === 'ACTIVE');
+  // Highlight satellites assigned to active or scheduled mission tasks
+  const relevantTasks = tasks.filter(t => t.status === 'SCHEDULED' || t.status === 'IN_PROGRESS');
 
   return (
     <>
-      {activeTasks.map((t) => {
+      {relevantTasks.map((t) => {
         const sat = satellites.find(s => s.satelliteId === t.satelliteId);
         if (!sat) return null;
 
-        // Draw a highlighting halo (ellipse) under the satellite indicating it is currently performing a task
+        // Draw a highlighting halo (ellipse) indicating satellite mission task assignment
         return (
           <Entity
-            key={t.id}
-            position={Cartesian3.fromDegrees(sat.longitude, sat.latitude, sat.altitudeKm * 1000)}
+            key={`halo-${t.id}`}
+            position={Cartesian3.fromDegrees(sat.longitude, sat.latitude, 0)} // Ground footprint projection
           >
             <EllipseGraphics
-              semiMinorAxis={500000.0} // 500km radius
-              semiMajorAxis={500000.0}
-              material={Color.fromCssColorString('#ef4444').withAlpha(0.4)}
+              semiMinorAxis={400000.0} // 400km sensor footprint
+              semiMajorAxis={400000.0}
+              material={Color.fromCssColorString('#6366f1').withAlpha(0.25)}
               outline={true}
-              outlineColor={Color.fromCssColorString('#ef4444')}
+              outlineColor={Color.fromCssColorString('#818cf8').withAlpha(0.6)}
             />
           </Entity>
         );
