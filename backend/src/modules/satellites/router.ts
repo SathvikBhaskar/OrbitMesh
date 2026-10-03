@@ -59,12 +59,24 @@ satellitesRouter.get("/", async (req, res, next) => {
 
 satellitesRouter.get("/:id", validate(getSatelliteSchema), async (req, res, next) => {
   try {
-    const result = await db.select().from(satellites).where(eq(satellites.id, req.params.id as string));
-    if (result.length === 0) {
+    const result = await db.execute(sql`
+      SELECT 
+        s.id, s.norad_id as "noradId", s.name, s.status, s.created_at as "createdAt", s.updated_at as "updatedAt",
+        d.tle_epoch as "tleEpoch", d.source, d.tle_line1 as "tleLine1", d.tle_line2 as "tleLine2"
+      FROM satellites s
+      LEFT JOIN (
+        SELECT DISTINCT ON (satellite_id) satellite_id, tle_epoch, source, tle_line1, tle_line2
+        FROM satellite_orbital_data 
+        ORDER BY satellite_id, tle_epoch DESC
+      ) d ON s.id = d.satellite_id
+      WHERE s.id = ${req.params.id}
+      LIMIT 1
+    `);
+    if (result.rows.length === 0) {
       res.status(404).json({ error: "Satellite not found" });
       return;
     }
-    res.json(result[0]);
+    res.json(result.rows[0]);
   } catch (err) {
     next(err);
   }

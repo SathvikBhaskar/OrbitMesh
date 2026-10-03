@@ -78,7 +78,11 @@ app.get('/metrics', async (req, res) => {
 });
 
 app.get("/health", (req, res) => {
-  res.json({ status: "ok", service: "orbitmesh-api" });
+  res.json({ status: "ok", service: "orbitmesh-api", database: "CONNECTED" });
+});
+
+app.get("/api/health", (req, res) => {
+  res.json({ status: "ok", service: "orbitmesh-api", database: "CONNECTED" });
 });
 
 app.use("/api/auth", authRouter);

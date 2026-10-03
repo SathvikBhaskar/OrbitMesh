@@ -1,5 +1,20 @@
 import { db, pool } from "./client";
-import { satellites, groundStations, missionTasks, contactWindows, reservations, schedulerRuns, satelliteOrbitalData } from "./schema";
+import { 
+  satellites, 
+  groundStations, 
+  missionTasks, 
+  contactWindows, 
+  reservations, 
+  schedulerRuns, 
+  satelliteOrbitalData,
+  outboundDispatchMessages,
+  dispatchAttempts,
+  executionTelemetryEvents,
+  operationalEventLedger,
+  operationalBatches,
+  scheduleProposals,
+  orbitalSyncRuns
+} from "./schema";
 import { ContactWindowService } from "../modules/contact-windows/contact-window-service";
 import { DemoOrbitalDataProvider, DemoMissionTaskProvider } from "../modules/data-providers/demo-providers";
 import { RealOrbitalDataProvider } from "../modules/data-providers/real-provider";
@@ -10,6 +25,12 @@ const rng = seedrandom(SEED.toString());
 
 export async function resetDb() {
   console.log("Clearing existing data...");
+  await db.delete(outboundDispatchMessages);
+  await db.delete(dispatchAttempts);
+  await db.delete(executionTelemetryEvents);
+  await db.delete(operationalEventLedger);
+  await db.delete(operationalBatches);
+  await db.delete(scheduleProposals);
   await db.delete(schedulerRuns);
   await db.delete(reservations);
   await db.delete(contactWindows);

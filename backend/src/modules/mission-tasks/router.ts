@@ -14,7 +14,7 @@ export const missionTasksRouter = Router();
 
 missionTasksRouter.post("/", authenticate, authorize(["OPERATOR", "ADMIN"]), validate(createMissionTaskSchema), async (req, res, next) => {
   try {
-    const { satelliteId, name, description, priority, durationSeconds, deadline } = req.body;
+    const { satelliteId, name, description, priority, durationSeconds, deadline, targetBytes, requiredFrequencyBand, minDataRateMbps } = req.body;
     const result = await db.insert(missionTasks).values({
       satelliteId,
       name,
@@ -22,6 +22,9 @@ missionTasksRouter.post("/", authenticate, authorize(["OPERATOR", "ADMIN"]), val
       priority,
       durationSeconds,
       deadline: new Date(deadline),
+      targetBytes: targetBytes ? String(targetBytes) : null,
+      requiredFrequencyBand,
+      minDataRateMbps,
       status: "PENDING"
     }).returning();
     res.status(201).json(result[0]);
@@ -71,7 +74,7 @@ missionTasksRouter.patch("/:id", authenticate, authorize(["OPERATOR", "ADMIN"]),
       return;
     }
 
-    const { name, description, priority, durationSeconds, deadline, status } = req.body;
+    const { name, description, priority, durationSeconds, deadline, status, targetBytes } = req.body;
     const updateData: any = {};
     if (name !== undefined) updateData.name = name;
     if (description !== undefined) updateData.description = description;
@@ -79,6 +82,11 @@ missionTasksRouter.patch("/:id", authenticate, authorize(["OPERATOR", "ADMIN"]),
     if (durationSeconds !== undefined) updateData.durationSeconds = durationSeconds;
     if (deadline !== undefined) updateData.deadline = new Date(deadline);
     if (status !== undefined) updateData.status = status; // Only CANCELLED is allowed by schema
+    if (targetBytes !== undefined) {
+      updateData.targetBytes = targetBytes;
+      const fulfilled = existing[0]?.fulfilledBytes ? Number(existing[0].fulfilledBytes) : 0;
+      updateData.remainingBytes = Math.max(0, targetBytes - fulfilled);
+    }
     updateData.updatedAt = new Date();
 
     const result = await db.update(missionTasks)

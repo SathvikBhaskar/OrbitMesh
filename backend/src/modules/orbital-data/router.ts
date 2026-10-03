@@ -65,8 +65,7 @@ orbitalSyncRouter.get("/status", async (req, res, next) => {
     const lastRun = await db
       .select()
       .from(orbitalSyncRuns)
-      .where(sql`${orbitalSyncRuns.status} = 'SUCCESS'`)
-      .orderBy(desc(orbitalSyncRuns.completedAt))
+      .orderBy(desc(orbitalSyncRuns.startedAt))
       .limit(1);
 
     const counts = await Promise.all([

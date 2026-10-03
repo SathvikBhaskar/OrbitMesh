@@ -28,7 +28,61 @@ export function errorHandler(err: any, req: Request, res: Response, next: NextFu
     return;
   }
 
-  // 2. Map standard known HTTP errors
+  // 2. Map PostgreSQL / Drizzle Database Constraints
+  const dbCode = err.code || err.cause?.code;
+  if (dbCode) {
+    logger.error({ err, reqId: requestId, dbCode }, "Database Constraint Violation");
+
+    switch (dbCode) {
+      case "23503": // foreign_key_violation
+        res.status(400).json({
+          error: {
+            code: "FOREIGN_KEY_VIOLATION",
+            message: "Referenced entity does not exist or operation violates relational dependency constraints",
+            requestId,
+          },
+        });
+        return;
+      case "23505": // unique_violation
+        res.status(409).json({
+          error: {
+            code: "RESOURCE_CONFLICT",
+            message: "A resource with these unique attributes already exists",
+            requestId,
+          },
+        });
+        return;
+      case "23514": // check_violation
+        res.status(400).json({
+          error: {
+            code: "CONSTRAINT_VIOLATION",
+            message: "Operation violates physical or mathematical domain constraints",
+            requestId,
+          },
+        });
+        return;
+      case "23502": // not_null_violation
+        res.status(400).json({
+          error: {
+            code: "MISSING_REQUIRED_FIELD",
+            message: "A required database field was omitted",
+            requestId,
+          },
+        });
+        return;
+      case "40001": // serialization_failure
+        res.status(409).json({
+          error: {
+            code: "CONCURRENCY_CONFLICT",
+            message: "Concurrent transaction conflict. Please retry the operation.",
+            requestId,
+          },
+        });
+        return;
+    }
+  }
+
+  // 3. Map standard known HTTP errors
   const status = err.status || err.statusCode || 500;
   
   if (status !== 500) {
@@ -42,15 +96,18 @@ export function errorHandler(err: any, req: Request, res: Response, next: NextFu
     return;
   }
 
-  // 3. Handle unknown internal errors (500)
+  // 4. Handle unknown internal errors (500)
   logger.error({ err, reqId: requestId }, "Unhandled Internal Server Error");
+
+  // Never expose raw SQL queries or database internal connection strings in client responses
+  const rawMessage = typeof err.message === "string" ? err.message : "";
+  const isDrizzleQuery = rawMessage.startsWith("Failed query:") || err.type === "DrizzleQueryError";
 
   res.status(500).json({
     error: {
       code: "INTERNAL_ERROR",
-      message: env.nodeEnv === "development" ? err.message : "Internal server error",
-      // Expose stack only in dev for easier debugging, mask in production
-      ...(env.nodeEnv === "development" && { stack: err.stack }),
+      message: isDrizzleQuery ? "Internal database operation failed" : (env.nodeEnv === "development" ? err.message : "Internal server error"),
+      ...(env.nodeEnv === "development" && !isDrizzleQuery && { stack: err.stack }),
       requestId,
     },
   });

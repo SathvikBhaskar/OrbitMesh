@@ -1,6 +1,6 @@
 import { db, txContext } from "../../db/client";
 import { scheduleVersions, scheduleProposals, reservations, missionTasks, scheduleAuditLog } from "../../db/schema";
-import { eq, inArray, sql } from "drizzle-orm";
+import { eq, and, inArray, sql } from "drizzle-orm";
 import { MetaScheduler } from "../meta-scheduler/meta-scheduler";
 import { CandidateService } from "./candidate-service";
 import { UrgencyScheduler } from "./urgency-scheduler";
@@ -36,9 +36,16 @@ export class SchedulerWrapperService {
     try {
       await db.transaction(async (tx) => {
         await txContext.run(tx, async () => {
-          // Clear all AUTOMATED reservations to allow rescheduling
+          // Clear only replaceable, unexecuted AUTOMATED reservations to allow rescheduling
+          // Invariant: MANUAL, LOCKED, and active/dispatched executions (EXECUTION_READY, IN_PROGRESS, COMPLETED) are preserved
           const unlockedRes = await tx.delete(reservations)
-            .where(eq(reservations.source, "AUTOMATED"))
+            .where(
+              and(
+                eq(reservations.source, "AUTOMATED"),
+                eq(reservations.locked, false),
+                eq(reservations.executionState, "SCHEDULED")
+              )
+            )
             .returning();
           
           if (unlockedRes.length > 0) {
@@ -116,9 +123,16 @@ export class SchedulerWrapperService {
         throw err;
       }
 
-      // We need to delete ALL existing AUTOMATED reservations so the new proposal can take their place
+      // We delete ONLY unexecuted, unlocked AUTOMATED reservations so the new proposal can take their place
+      // Invariant: MANUAL, LOCKED, and active/dispatched executions (EXECUTION_READY, IN_PROGRESS, COMPLETED) are preserved
       const unlockedRes = await tx.delete(reservations)
-        .where(eq(reservations.source, "AUTOMATED"))
+        .where(
+          and(
+            eq(reservations.source, "AUTOMATED"),
+            eq(reservations.locked, false),
+            eq(reservations.executionState, "SCHEDULED")
+          )
+        )
         .returning();
       
       if (unlockedRes.length > 0) {
