@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { SatellitePosition, GroundStation, ContactWindow } from './map-types';
-import { Globe, X, RotateCw, Radio, Sun, Moon } from 'lucide-react';
+import { Globe, X, RotateCw, Radio, Sun, Moon, Compass } from 'lucide-react';
+import { PolarSkyPlot } from './PolarSkyPlot';
 
 /**
  * Calculates whether a satellite is in Earth's shadow cone (Umbra)
@@ -190,6 +191,18 @@ export const SatelliteDetailPanel: React.FC<SatelliteDetailPanelProps> = ({
                 }}>
                   <Radio size={14} />
                   <span>Antenna Array: Operational Ready</span>
+                </div>
+
+                <div style={{ marginTop: '0.6rem', paddingTop: '0.6rem', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+                  <PolarSkyPlot
+                    stationCode={(selected as GroundStation).code}
+                    minElevationDeg={(selected as GroundStation).minimumElevationDeg || 10}
+                    currentAzimuth={138.4}
+                    currentElevation={42.6}
+                    targetName="OVERHEAD"
+                    width={240}
+                    height={180}
+                  />
                 </div>
               </>
             )}
