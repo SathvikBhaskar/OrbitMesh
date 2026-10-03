@@ -1,6 +1,39 @@
 import React, { useState } from 'react';
 import { SatellitePosition, GroundStation, ContactWindow } from './map-types';
-import { Globe, X, RotateCw, Radio, Sun } from 'lucide-react';
+import { Globe, X, RotateCw, Radio, Sun, Moon } from 'lucide-react';
+
+/**
+ * Calculates whether a satellite is in Earth's shadow cone (Umbra)
+ * given its geodetic position and current UTC solar vector.
+ */
+export function isSatelliteInEclipse(latDeg: number, lonDeg: number, altKm: number, date: Date = new Date()): boolean {
+  const start = new Date(date.getFullYear(), 0, 0);
+  const diff = date.getTime() - start.getTime();
+  const dayOfYear = Math.floor(diff / (1000 * 60 * 60 * 24));
+
+  const decRad = (-23.44 * Math.PI / 180) * Math.cos((2 * Math.PI / 365.25) * (dayOfYear + 10));
+  const utcHours = date.getUTCHours() + date.getUTCMinutes() / 60 + date.getUTCSeconds() / 3600;
+  const subsolarLonDeg = (12 - utcHours) * 15;
+  const subsolarLonRad = (subsolarLonDeg * Math.PI) / 180;
+
+  const Sx = Math.cos(decRad) * Math.cos(subsolarLonRad);
+  const Sy = Math.cos(decRad) * Math.sin(subsolarLonRad);
+  const Sz = Math.sin(decRad);
+
+  const RE = 6371; // km
+  const r = RE + altKm;
+  const latRad = (latDeg * Math.PI) / 180;
+  const lonRad = (lonDeg * Math.PI) / 180;
+
+  const Px = r * Math.cos(latRad) * Math.cos(lonRad);
+  const Py = r * Math.cos(latRad) * Math.sin(lonRad);
+  const Pz = r * Math.sin(latRad);
+
+  const dot = Px * Sx + Py * Sy + Pz * Sz;
+  const distSq = (r * r) - (dot * dot);
+
+  return dot < 0 && distSq < (RE * RE);
+}
 
 interface SatelliteDetailPanelProps {
   selected: SatellitePosition | GroundStation | null;
@@ -33,6 +66,9 @@ export const SatelliteDetailPanel: React.FC<SatelliteDetailPanelProps> = ({
   }
 
   const isSatellite = 'noradId' in selected;
+  const inEclipse = isSatellite
+    ? isSatelliteInEclipse(selected.latitude, selected.longitude, (selected as SatellitePosition).altitudeKm)
+    : false;
 
   // Filter contact windows matching this entity
   const relevantWindows = windows.filter(w => {
@@ -118,18 +154,18 @@ export const SatelliteDetailPanel: React.FC<SatelliteDetailPanelProps> = ({
                 <DetailRow label="Source" value={(selected as SatellitePosition).source} />
                 <div style={{
                   marginTop: '0.4rem',
-                  padding: '0.4rem 0.6rem',
+                  padding: '0.45rem 0.65rem',
                   borderRadius: '6px',
-                  background: 'rgba(56, 189, 248, 0.08)',
-                  border: '1px solid rgba(56, 189, 248, 0.2)',
+                  background: inEclipse ? 'rgba(239, 68, 68, 0.12)' : 'rgba(56, 189, 248, 0.08)',
+                  border: inEclipse ? '1px solid rgba(239, 68, 68, 0.35)' : '1px solid rgba(56, 189, 248, 0.25)',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '0.4rem',
+                  gap: '0.45rem',
                   fontSize: '0.75rem',
-                  color: '#38bdf8',
+                  color: inEclipse ? '#f87171' : '#38bdf8',
                 }}>
-                  <Sun size={14} />
-                  <span>Solar Illumination: Direct (Nominal)</span>
+                  {inEclipse ? <Moon size={14} /> : <Sun size={14} />}
+                  <span>{inEclipse ? 'Power: In Eclipse (Battery Reserve)' : 'Power: Direct Sunlight (100% Solar)'}</span>
                 </div>
               </>
             ) : (
