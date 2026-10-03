@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { SatellitePosition, GroundStation, ContactWindow } from './map-types';
 import { Globe, X, RotateCw, Radio, Sun, Moon, Compass } from 'lucide-react';
 import { PolarSkyPlot } from './PolarSkyPlot';
+import { getGroundStationSkyTracking } from './sky-coordinates';
 
 /**
  * Calculates whether a satellite is in Earth's shadow cone (Umbra)
@@ -38,8 +39,10 @@ export function isSatelliteInEclipse(latDeg: number, lonDeg: number, altKm: numb
 
 interface SatelliteDetailPanelProps {
   selected: SatellitePosition | GroundStation | null;
+  satellites?: SatellitePosition[];
   windows?: ContactWindow[];
   stations?: GroundStation[];
+  simTime?: Date;
   isPivotMode?: boolean;
   onTogglePivot?: () => void;
   onClose: () => void;
@@ -47,13 +50,43 @@ interface SatelliteDetailPanelProps {
 
 export const SatelliteDetailPanel: React.FC<SatelliteDetailPanelProps> = ({
   selected,
+  satellites = [],
   windows = [],
   stations = [],
+  simTime,
   isPivotMode = false,
   onTogglePivot,
   onClose,
 }) => {
   const [activeTab, setActiveTab] = useState<'telemetry' | 'passes'>('telemetry');
+
+  const isSatellite = selected ? 'noradId' in selected : false;
+  const inEclipse = isSatellite && selected
+    ? isSatelliteInEclipse(selected.latitude, selected.longitude, (selected as SatellitePosition).altitudeKm)
+    : false;
+
+  // Real-time topocentric sky tracking for ground stations
+  const skyTracking = useMemo(() => {
+    if (isSatellite || !selected) return null;
+    return getGroundStationSkyTracking(
+      selected as GroundStation,
+      satellites,
+      windows,
+      simTime || new Date()
+    );
+  }, [isSatellite, selected, satellites, windows, simTime]);
+
+  // Filter contact windows matching this entity
+  const relevantWindows = useMemo(() => {
+    if (!selected) return [];
+    return windows.filter(w => {
+      if (isSatellite) {
+        return w.satelliteId === (selected as SatellitePosition).satelliteId;
+      } else {
+        return w.groundStationId === (selected as GroundStation).id;
+      }
+    });
+  }, [selected, isSatellite, windows]);
 
   if (!selected) {
     return (
@@ -65,20 +98,6 @@ export const SatelliteDetailPanel: React.FC<SatelliteDetailPanelProps> = ({
       </div>
     );
   }
-
-  const isSatellite = 'noradId' in selected;
-  const inEclipse = isSatellite
-    ? isSatelliteInEclipse(selected.latitude, selected.longitude, (selected as SatellitePosition).altitudeKm)
-    : false;
-
-  // Filter contact windows matching this entity
-  const relevantWindows = windows.filter(w => {
-    if (isSatellite) {
-      return w.satelliteId === (selected as SatellitePosition).satelliteId;
-    } else {
-      return w.groundStationId === (selected as GroundStation).id;
-    }
-  });
 
   return (
     <div className="glass-panel" style={{ padding: '1.1rem', display: 'flex', flexDirection: 'column', gap: '0.65rem', height: '100%', overflow: 'hidden' }}>
@@ -197,11 +216,11 @@ export const SatelliteDetailPanel: React.FC<SatelliteDetailPanelProps> = ({
                   <PolarSkyPlot
                     stationCode={(selected as GroundStation).code}
                     minElevationDeg={(selected as GroundStation).minimumElevationDeg || 10}
-                    currentAzimuth={138.4}
-                    currentElevation={42.6}
-                    targetName="OVERHEAD"
+                    primaryTarget={skyTracking ? skyTracking.primaryTarget : null}
+                    secondaryTargets={skyTracking ? skyTracking.secondaryTargets : []}
+                    trackPoints={skyTracking ? skyTracking.trackPoints : []}
                     width={240}
-                    height={180}
+                    height={195}
                   />
                 </div>
               </>

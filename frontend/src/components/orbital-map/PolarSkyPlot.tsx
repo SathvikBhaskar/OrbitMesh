@@ -1,18 +1,12 @@
 import React from 'react';
-
-interface SkyTrackPoint {
-  azimuthDeg: number;
-  elevationDeg: number;
-  label?: string;
-}
+import { SkyTarget, SkyTrackPoint } from './sky-coordinates';
 
 interface PolarSkyPlotProps {
   stationCode: string;
   minElevationDeg: number;
-  currentAzimuth?: number;
-  currentElevation?: number;
+  primaryTarget: SkyTarget | null;
+  secondaryTargets?: SkyTarget[];
   trackPoints?: SkyTrackPoint[];
-  targetName?: string;
   width?: number;
   height?: number;
 }
@@ -20,16 +14,15 @@ interface PolarSkyPlotProps {
 export const PolarSkyPlot: React.FC<PolarSkyPlotProps> = ({
   stationCode,
   minElevationDeg = 10,
-  currentAzimuth = 45,
-  currentElevation = 38,
+  primaryTarget,
+  secondaryTargets = [],
   trackPoints = [],
-  targetName,
   width = 240,
-  height = 200,
+  height = 195,
 }) => {
   const cx = width / 2;
-  const cy = height / 2 + 6;
-  const maxRadius = Math.min(cx, cy) - 24;
+  const cy = height / 2 + 4;
+  const maxRadius = Math.min(cx, cy) - 22;
 
   // Convert (azimuth, elevation) to 2D (x, y) coordinates
   const toXY = (azimuthDeg: number, elevationDeg: number) => {
@@ -45,19 +38,21 @@ export const PolarSkyPlot: React.FC<PolarSkyPlotProps> = ({
   // Mask ring radius
   const maskRadius = maxRadius * ((90 - minElevationDeg) / 90);
 
-  // Current blip position
-  const currentPos = toXY(currentAzimuth, currentElevation);
+  // Primary blip position
+  const hasTarget = Boolean(primaryTarget);
+  const isAboveHorizon = primaryTarget ? primaryTarget.elevation >= 0 : false;
+  const primaryPos = primaryTarget ? toXY(primaryTarget.azimuth, primaryTarget.elevation) : { x: cx, y: cy };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', fontSize: '0.68rem', color: 'var(--text-muted)', marginBottom: '0.2rem' }}>
-        <span>ZENITH SKY TRACK (AZ/EL)</span>
+        <span>ZENITH SKY RADAR (AZ/EL)</span>
         <span style={{ color: '#facc15' }}>MASK: {minElevationDeg}°</span>
       </div>
 
       <svg width={width} height={height} style={{ overflow: 'visible' }}>
         {/* Background dark circle */}
-        <circle cx={cx} cy={cy} r={maxRadius} fill="rgba(10, 15, 29, 0.9)" stroke="rgba(255, 255, 255, 0.15)" strokeWidth={1} />
+        <circle cx={cx} cy={cy} r={maxRadius} fill="rgba(10, 15, 29, 0.95)" stroke="rgba(255, 255, 255, 0.15)" strokeWidth={1} />
 
         {/* Concentric Elevation Rings: 30° and 60° */}
         <circle cx={cx} cy={cy} r={maxRadius * (60 / 90)} fill="none" stroke="rgba(255, 255, 255, 0.08)" strokeDasharray="2,2" />
@@ -81,7 +76,7 @@ export const PolarSkyPlot: React.FC<PolarSkyPlotProps> = ({
         <text x={cx + 3} y={cy - maxRadius * (30 / 90) + 3} fill="rgba(255,255,255,0.3)" fontSize={8}>60°</text>
         <text x={cx} y={cy} fill="rgba(255,255,255,0.5)" fontSize={10} textAnchor="middle" dominantBaseline="central">+</text>
 
-        {/* Active Track Path */}
+        {/* Active Track Path across sky */}
         {trackPoints.length > 1 && (
           <path
             d={trackPoints.map((pt, i) => {
@@ -89,35 +84,93 @@ export const PolarSkyPlot: React.FC<PolarSkyPlotProps> = ({
               return `${i === 0 ? 'M' : 'L'} ${x} ${y}`;
             }).join(' ')}
             fill="none"
-            stroke="#facc15"
-            strokeWidth={2}
-            strokeDasharray="4,2"
+            stroke={primaryTarget?.isActivePass ? '#facc15' : '#38bdf8'}
+            strokeWidth={1.8}
+            strokeDasharray="3,2"
+            opacity={0.8}
           />
         )}
 
-        {/* Current Target Satellite Blip */}
-        <circle cx={currentPos.x} cy={currentPos.y} r={7} fill="rgba(56, 189, 248, 0.25)" />
-        <circle cx={currentPos.x} cy={currentPos.y} r={4} fill="#38bdf8" stroke="#fff" strokeWidth={1.5} />
+        {/* Secondary Satellites currently above horizon */}
+        {secondaryTargets.map((sec) => {
+          const pos = toXY(sec.azimuth, sec.elevation);
+          return (
+            <g key={sec.satellite.satelliteId}>
+              <circle cx={pos.x} cy={pos.y} r={2.5} fill="rgba(148, 163, 184, 0.7)" />
+              <text x={pos.x + 4} y={pos.y - 3} fill="rgba(148, 163, 184, 0.6)" fontSize={7}>
+                {sec.satellite.name.substring(0, 6)}
+              </text>
+            </g>
+          );
+        })}
 
-        {/* Current Blip Az/El label */}
-        <text
-          x={currentPos.x + 8}
-          y={currentPos.y - 6}
-          fill="#fff"
-          fontSize={9}
-          fontWeight="bold"
-          fontFamily="var(--font-mono)"
-        >
-          {targetName ? `${targetName.substring(0, 10)}: ` : ''}{currentElevation.toFixed(0)}° EL
-        </text>
+        {/* Primary Target Satellite Blip */}
+        {primaryTarget && isAboveHorizon && (
+          <g>
+            <circle
+              cx={primaryPos.x}
+              cy={primaryPos.y}
+              r={8}
+              fill={primaryTarget.isActivePass ? 'rgba(250, 204, 21, 0.3)' : (primaryTarget.isInBeam ? 'rgba(56, 189, 248, 0.25)' : 'rgba(245, 158, 11, 0.15)')}
+            />
+            <circle
+              cx={primaryPos.x}
+              cy={primaryPos.y}
+              r={4.5}
+              fill={primaryTarget.isActivePass ? '#facc15' : (primaryTarget.isInBeam ? '#38bdf8' : '#f59e0b')}
+              stroke="#fff"
+              strokeWidth={1.5}
+            />
+            <text
+              x={primaryPos.x + 7}
+              y={primaryPos.y - 5}
+              fill="#fff"
+              fontSize={8.5}
+              fontWeight="bold"
+              fontFamily="var(--font-mono)"
+            >
+              {primaryTarget.satellite.name.substring(0, 10)} ({primaryTarget.elevation.toFixed(0)}°)
+            </text>
+          </g>
+        )}
       </svg>
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', fontSize: '0.72rem', fontFamily: 'var(--font-mono)', color: '#fff', marginTop: '0.3rem', padding: '0.2rem 0.4rem', background: 'rgba(255,255,255,0.04)', borderRadius: '4px' }}>
-        <span>AZ: <span style={{ color: '#38bdf8' }}>{currentAzimuth.toFixed(1)}°</span></span>
-        <span>EL: <span style={{ color: '#38bdf8' }}>{currentElevation.toFixed(1)}°</span></span>
-        <span style={{ color: currentElevation >= minElevationDeg ? '#4ade80' : '#f87171' }}>
-          {currentElevation >= minElevationDeg ? '● IN-BEAM' : '○ BELOW MASK'}
-        </span>
+      {/* Real-Time Mathematical Telemetry Readout */}
+      <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '0.2rem',
+        width: '100%',
+        fontSize: '0.72rem',
+        fontFamily: 'var(--font-mono)',
+        color: '#fff',
+        marginTop: '0.35rem',
+        padding: '0.35rem 0.5rem',
+        background: 'rgba(255,255,255,0.04)',
+        borderRadius: '6px',
+        border: '1px solid rgba(255,255,255,0.08)'
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ color: 'var(--text-muted)', fontSize: '0.68rem' }}>TARGET:</span>
+          <span style={{ fontWeight: 600, color: primaryTarget?.isActivePass ? '#facc15' : '#38bdf8', maxWidth: '140px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {primaryTarget ? primaryTarget.satellite.name : 'NO SATS OVERHEAD'}
+          </span>
+        </div>
+
+        {primaryTarget && (
+          <>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem' }}>
+              <span>AZ: <span style={{ color: '#38bdf8' }}>{primaryTarget.azimuth.toFixed(1)}° ({primaryTarget.compass})</span></span>
+              <span>EL: <span style={{ color: primaryTarget.isInBeam ? '#4ade80' : '#facc15' }}>{primaryTarget.elevation.toFixed(1)}°</span></span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+              <span>RANGE: {Math.round(primaryTarget.slantRangeKm).toLocaleString()} km</span>
+              <span style={{ fontWeight: 600, color: primaryTarget.isActivePass ? '#facc15' : (primaryTarget.isInBeam ? '#4ade80' : '#f87171') }}>
+                {primaryTarget.isActivePass ? '⚡ ACTIVE PASS' : (primaryTarget.isInBeam ? '● IN-BEAM' : (isAboveHorizon ? '○ BELOW MASK' : '○ BELOW HORIZON'))}
+              </span>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

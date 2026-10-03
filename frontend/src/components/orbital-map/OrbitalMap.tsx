@@ -219,23 +219,19 @@ export const OrbitalMap: React.FC = () => {
     return selectedEntity;
   }, [selectedEntity, propagatedSatellites]);
 
-  const handleSatelliteSelectChange = (satId: string) => {
-    if (!satId) {
+  const handleTargetSelectChange = (id: string) => {
+    if (!id) {
       handleResetView();
       return;
     }
-    const found = propagatedSatellites.find(s => s.satelliteId === satId);
-    if (found) {
-      setSelectedEntity(found);
-      setIsPivotMode(false);
-      setFlyTarget({
-        latitude: found.latitude,
-        longitude: found.longitude,
-        altitudeKm: found.altitudeKm,
-        zoomClose: false,
-        isPivot: false,
-        name: found.name,
-      });
+    const sat = propagatedSatellites.find(s => s.satelliteId === id);
+    if (sat) {
+      handleEntitySelect(sat);
+      return;
+    }
+    const station = stations.find(s => s.id === id);
+    if (station) {
+      handleEntitySelect(station);
     }
   };
 
@@ -300,9 +296,9 @@ export const OrbitalMap: React.FC = () => {
         </div>
 
         <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap', fontSize: '0.8rem' }}>
-          {/* Quick Satellite Selector */}
+          {/* Quick Target Selector (Satellites & Ground Stations) */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Focus Satellite:</span>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Focus Target:</span>
             <select
               className="glass-panel"
               style={{
@@ -312,17 +308,27 @@ export const OrbitalMap: React.FC = () => {
                 background: 'rgba(20, 20, 30, 0.85)',
                 border: '1px solid var(--border-color)',
                 borderRadius: '6px',
-                cursor: 'pointer'
+                cursor: 'pointer',
+                maxWidth: '240px'
               }}
-              value={selectedEntity && 'satelliteId' in selectedEntity ? (selectedEntity as SatellitePosition).satelliteId : ''}
-              onChange={(e) => handleSatelliteSelectChange(e.target.value)}
+              value={selectedEntity ? ('satelliteId' in selectedEntity ? selectedEntity.satelliteId : selectedEntity.id) : ''}
+              onChange={(e) => handleTargetSelectChange(e.target.value)}
             >
-              <option value="">-- Choose Satellite --</option>
-              {filteredSatellites.map((s) => (
-                <option key={s.satelliteId} value={s.satelliteId}>
-                  {s.name} (NORAD {s.noradId})
-                </option>
-              ))}
+              <option value="">-- Choose Satellite or Station --</option>
+              <optgroup label="🛰️ SATELLITES">
+                {filteredSatellites.map((s) => (
+                  <option key={s.satelliteId} value={s.satelliteId}>
+                    {s.name} (NORAD {s.noradId})
+                  </option>
+                ))}
+              </optgroup>
+              <optgroup label="📡 GROUND STATIONS">
+                {stations.map((st) => (
+                  <option key={st.id} value={st.id}>
+                    {st.name} [{st.code}]
+                  </option>
+                ))}
+              </optgroup>
             </select>
           </div>
 
@@ -713,8 +719,10 @@ export const OrbitalMap: React.FC = () => {
         <div style={{ width: '280px', flexShrink: 0 }}>
           <SatelliteDetailPanel
             selected={activeSelectedEntity}
+            satellites={propagatedSatellites}
             windows={windows}
             stations={stations}
+            simTime={simTime}
             isPivotMode={isPivotMode}
             onTogglePivot={handleTogglePivot}
             onClose={handleResetView}
