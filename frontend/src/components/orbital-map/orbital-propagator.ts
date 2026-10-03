@@ -15,10 +15,11 @@ export function propagateSatellitesAtTime(
     }
 
     try {
-      let satrec = satrecCache.get(sat.satelliteId);
+      const cacheKey = `${sat.satelliteId}_${sat.tleLine1 || ''}`;
+      let satrec = satrecCache.get(cacheKey);
       if (!satrec) {
         satrec = twoline2satrec(sat.tleLine1, sat.tleLine2);
-        satrecCache.set(sat.satelliteId, satrec);
+        satrecCache.set(cacheKey, satrec);
       }
 
       const pv = propagate(satrec, targetTime);
