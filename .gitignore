@@ -2,3 +2,5 @@
 backend/.env
 node_modules/
 dist/
+backend/scratch/
+*.log

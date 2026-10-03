@@ -38,12 +38,36 @@ const fetchWithAuth = async (url: string, options: RequestInit = {}) => {
   return response;
 };
 
+function parseApiError(response: Response, data: any): Error {
+  let message = `HTTP error! status: ${response.status}`;
+  let code: string | undefined;
+
+  if (data) {
+    if (typeof data.error === 'string') {
+      message = data.error;
+    } else if (data.error && typeof data.error === 'object') {
+      message = data.error.message || data.error.code || message;
+      code = data.error.code;
+    } else if (typeof data.message === 'string') {
+      message = data.message;
+    } else if (typeof data.reason === 'string') {
+      message = data.reason;
+    }
+  }
+
+  const err: any = new Error(message);
+  err.status = response.status;
+  err.code = code || (data && data.code);
+  err.response = { status: response.status, data };
+  return err;
+}
+
 export const api = {
   get: async (endpoint: string) => {
     const response = await fetchWithAuth(`${API_BASE_URL}${endpoint}`);
     if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      throw new Error(error.error || `HTTP error! status: ${response.status}`);
+      const data = await response.json().catch(() => ({}));
+      throw parseApiError(response, data);
     }
     return response.json();
   },
@@ -57,8 +81,8 @@ export const api = {
       body: data ? JSON.stringify(data) : undefined,
     });
     if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      throw new Error(error.error || error?.error?.message || `HTTP error! status: ${response.status}`);
+      const respData = await response.json().catch(() => ({}));
+      throw parseApiError(response, respData);
     }
     return response.json();
   },
@@ -72,8 +96,8 @@ export const api = {
       body: data ? JSON.stringify(data) : undefined,
     });
     if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      throw new Error(error.error || error?.error?.message || `HTTP error! status: ${response.status}`);
+      const respData = await response.json().catch(() => ({}));
+      throw parseApiError(response, respData);
     }
     return response.json();
   }

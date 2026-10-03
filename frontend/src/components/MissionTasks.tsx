@@ -17,7 +17,7 @@ export const MissionTasks = () => {
   const [error, setError] = useState<string | null>(null);
 
   // Filtering
-  const [filter, setFilter] = useState('PENDING');
+  const [filter, setFilter] = useState('ALL');
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -82,7 +82,7 @@ export const MissionTasks = () => {
       setEditingTask(null);
       setFormData({
         satelliteId: satellites[0]?.id || '',
-        name: '',
+        name: 'Earth Observation Task',
         description: '',
         priority: 3,
         durationSeconds: 300,
@@ -103,16 +103,27 @@ export const MissionTasks = () => {
     e.preventDefault();
     setSubmitting(true);
     try {
-      const payload = {
-        ...formData,
-        targetBytes: (formData.targetMb || 1000) * 1000000,
-        deadline: new Date(formData.deadline).toISOString(),
-      };
-      
       if (editingTask) {
-        await api.patch(`/mission-tasks/${editingTask.id}`, payload);
+        const updatePayload: any = {
+          name: formData.name,
+          description: formData.description || undefined,
+          priority: formData.priority,
+          durationSeconds: formData.durationSeconds,
+          deadline: new Date(formData.deadline).toISOString(),
+          targetBytes: (formData.targetMb || 1000) * 1000000,
+        };
+        await api.patch(`/mission-tasks/${editingTask.id}`, updatePayload);
       } else {
-        await api.post('/mission-tasks', payload);
+        const createPayload = {
+          satelliteId: formData.satelliteId,
+          name: formData.name,
+          description: formData.description || undefined,
+          priority: formData.priority,
+          durationSeconds: formData.durationSeconds,
+          deadline: new Date(formData.deadline).toISOString(),
+          targetBytes: (formData.targetMb || 1000) * 1000000,
+        };
+        await api.post('/mission-tasks', createPayload);
       }
       handleCloseModal();
       await fetchData();
@@ -139,29 +150,45 @@ export const MissionTasks = () => {
   return (
     <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', position: 'relative' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <p style={{ color: 'var(--text-secondary)' }}>Pending and scheduled communication tasks.</p>
+        <p style={{ color: 'var(--text-secondary)' }}>Pending, scheduled, and completed communication tasks.</p>
         <button className="btn btn-primary" onClick={() => handleOpenModal()}>
           + Create Task
         </button>
       </div>
 
-      <div style={{ display: 'flex', gap: '1rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
-        {['ALL', 'PENDING', 'SCHEDULED', 'COMPLETED', 'CANCELLED'].map(f => (
-          <span 
-            key={f}
-            onClick={() => setFilter(f)}
-            style={{ 
-              cursor: 'pointer', 
-              color: filter === f ? 'var(--text-primary)' : 'var(--text-muted)',
-              fontWeight: filter === f ? 600 : 400,
-              borderBottom: filter === f ? '2px solid var(--accent-primary)' : 'none',
-              paddingBottom: '0.5rem',
-              marginBottom: '-0.6rem'
-            }}
-          >
-            {f === 'ALL' ? 'All' : f.charAt(0) + f.slice(1).toLowerCase()}
-          </span>
-        ))}
+      <div style={{ display: 'flex', gap: '1.5rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
+        {['ALL', 'PENDING', 'SCHEDULED', 'COMPLETED', 'CANCELLED'].map(f => {
+          const count = f === 'ALL' ? tasks.length : tasks.filter(t => t.status === f).length;
+          return (
+            <span 
+              key={f}
+              onClick={() => setFilter(f)}
+              style={{ 
+                cursor: 'pointer', 
+                color: filter === f ? 'var(--text-primary)' : 'var(--text-muted)',
+                fontWeight: filter === f ? 600 : 400,
+                borderBottom: filter === f ? '2px solid var(--accent-primary)' : 'none',
+                paddingBottom: '0.5rem',
+                marginBottom: '-0.6rem',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                fontSize: '0.85rem'
+              }}
+            >
+              {f === 'ALL' ? 'All' : f.charAt(0) + f.slice(1).toLowerCase()}
+              <span style={{ 
+                fontSize: '0.72rem', 
+                background: filter === f ? 'rgba(99, 102, 241, 0.2)' : 'rgba(255,255,255,0.06)',
+                padding: '0.1rem 0.4rem', 
+                borderRadius: '999px',
+                color: filter === f ? 'var(--accent-secondary)' : 'var(--text-muted)'
+              }}>
+                {count}
+              </span>
+            </span>
+          );
+        })}
       </div>
       
       {error ? (
@@ -178,7 +205,7 @@ export const MissionTasks = () => {
                 <th>Name</th>
                 <th>Satellite</th>
                 <th>Duration</th>
-                <th>Deadline</th>
+                <th>Deadline (UTC)</th>
                 <th>Priority</th>
                 <th>Data Quota</th>
                 <th>Status</th>
@@ -191,7 +218,7 @@ export const MissionTasks = () => {
               ) : filteredTasks.length === 0 ? (
                 <tr>
                   <td colSpan={9} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
-                    No mission tasks found.
+                    No mission tasks found matching filter '{filter}'.
                   </td>
                 </tr>
               ) : (
@@ -208,7 +235,9 @@ export const MissionTasks = () => {
                       <td style={{ fontWeight: 500 }}>{task.name}</td>
                       <td>{getSatelliteName(task.satelliteId)}</td>
                       <td className="mono">{task.durationSeconds}s</td>
-                      <td className="mono">{format(new Date(task.deadline), 'HH:mm:ss')}</td>
+                      <td className="mono" style={{ fontSize: '0.8rem', whiteSpace: 'nowrap' }}>
+                        {format(new Date(task.deadline), 'yyyy-MM-dd HH:mm:ss')} UTC
+                      </td>
                       <td>
                         <span className="badge badge-priority">P{task.priority}</span>
                       </td>
@@ -228,7 +257,7 @@ export const MissionTasks = () => {
                         </div>
                       </td>
                       <td>
-                        <span className={`badge ${task.status === 'SCHEDULED' ? 'badge-success' : task.status === 'PENDING' ? 'badge-warning' : ''}`}>
+                        <span className={`badge ${task.status === 'SCHEDULED' ? 'badge-success' : task.status === 'PENDING' ? 'badge-warning' : task.status === 'COMPLETED' ? 'badge-success' : ''}`}>
                           {task.status}
                         </span>
                       </td>
@@ -244,9 +273,9 @@ export const MissionTasks = () => {
                             </button>
                             {actionMenuOpen === task.id && (
                               <div className="glass-panel" style={{
-                                position: 'absolute', right: '100%', top: '50%', transform: 'translateY(-50%)',
-                                zIndex: 10, display: 'flex', flexDirection: 'column', padding: '0.5rem', gap: '0.5rem',
-                                minWidth: '120px'
+                                position: 'absolute', right: 0, top: '100%',
+                                zIndex: 100, display: 'flex', flexDirection: 'column', padding: '0.5rem', gap: '0.5rem',
+                                minWidth: '120px', boxShadow: '0 4px 20px rgba(0,0,0,0.5)'
                               }}>
                                 <button className="btn btn-outline" style={{ border: 'none', justifyContent: 'flex-start' }} onClick={() => handleOpenModal(task)}>Edit</button>
                                 <button className="btn btn-outline" style={{ border: 'none', justifyContent: 'flex-start', color: 'var(--danger)' }} onClick={() => handleCancelTask(task.id)}>Cancel Task</button>

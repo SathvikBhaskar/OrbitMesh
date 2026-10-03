@@ -73,6 +73,7 @@ export const GanttTimeline = () => {
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [windows, setWindows] = useState<ContactWindow[]>([]);
   const [groundStations, setGroundStations] = useState<GroundStation[]>([]);
+  const [satellitesList, setSatellitesList] = useState<any[]>([]);
   
   const [selectedPolicy, setSelectedPolicy] = useState<SchedulerPolicyType>('HYBRID');
   const [previewReservations, setPreviewReservations] = useState<Reservation[] | null>(null);
@@ -100,17 +101,19 @@ export const GanttTimeline = () => {
     setPreviewError(null);
     setCommitError(null);
     try {
-      const [resData, winData, verData, gsData] = await Promise.all([
+      const [resData, winData, verData, gsData, satData] = await Promise.all([
         api.get('/reservations'),
         api.get('/contact-windows'),
         api.get('/scheduler/version').catch(() => ({ scheduleVersion: 0 })),
         api.get('/ground-stations').catch(() => []),
+        api.get('/satellites').catch(() => []),
       ]);
 
       setReservations(resData || []);
       setWindows(winData || []);
       setScheduleVersion(verData?.scheduleVersion || 0);
       setGroundStations(gsData || []);
+      setSatellitesList(satData || []);
       
       let e = Infinity;
       (winData || []).forEach((w: any) => {
@@ -146,22 +149,37 @@ export const GanttTimeline = () => {
         policy: selectedPolicy,
       });
 
-      setPreviewReservations(res.proposedReservations || []);
+      const proposed = res.proposedReservations || [];
+      setPreviewReservations(proposed);
       setScheduleVersion(res.scheduleVersion);
       setPreviewPolicy(res.policy || selectedPolicy);
       setPreviewMetrics(res.metrics || null);
       setScoreBreakdowns(res.scoreBreakdowns || []);
       
+      // Calculate true diff
+      const currentTaskIds = new Set(reservations.map(r => r.missionTaskId));
+      const proposedTaskIds = new Set(proposed.map((r: any) => r.missionTaskId));
+
+      let addedCount = 0;
+      proposedTaskIds.forEach(id => {
+        if (!currentTaskIds.has(id)) addedCount++;
+      });
+
+      let removedCount = 0;
+      currentTaskIds.forEach(id => {
+        if (!proposedTaskIds.has(id)) removedCount++;
+      });
+
       setProposalSummary({
-        added: (res.proposedReservations?.length || 0) - reservations.length,
+        added: addedCount,
         moved: 0,
-        removed: 0,
+        removed: removedCount,
         lockedPreserved: reservations.filter(r => r.locked).length,
       });
       
     } catch (err: any) {
       console.error(err);
-      if (err.status === 409) {
+      if (err.status === 409 || err.code === 'SCHEDULE_VERSION_CONFLICT') {
         setPreviewError("Schedule changed since last load. Please refresh and try again.");
       } else {
         setPreviewError(err.message || "Failed to generate preview");
@@ -194,7 +212,7 @@ export const GanttTimeline = () => {
 
     } catch (err: any) {
       console.error(err);
-      if (err.response?.status === 409 || err.status === 409) {
+      if (err.status === 409 || err.code === 'SCHEDULE_VERSION_CONFLICT') {
         setCommitError("Schedule changed since this preview. Review the current schedule and generate a new preview.");
       } else {
         setCommitError(err.message || "Failed to commit schedule");
@@ -269,17 +287,22 @@ export const GanttTimeline = () => {
   const renderBar = (startISO: string, endISO: string, color: string, style: React.CSSProperties = {}, key: string, label: string = "", isLocked: boolean = false) => {
     const s = new Date(startISO).getTime();
     const e = new Date(endISO).getTime();
+    const viewportEnd = viewportStart + viewportDuration;
     
-    // clamp
-    const leftPx = Math.max(0, ((s - viewportStart) / viewportDuration) * 100);
-    const widthPx = Math.max(0.5, ((e - s) / viewportDuration) * 100);
+    // Completely out of view
+    if (e <= viewportStart || s >= viewportEnd) return null;
 
-    if (leftPx > 100 || leftPx + widthPx < 0) return null;
+    // Clamped start and end to avoid visual stretching
+    const effectiveStart = Math.max(s, viewportStart);
+    const effectiveEnd = Math.min(e, viewportEnd);
+
+    const leftPx = ((effectiveStart - viewportStart) / viewportDuration) * 100;
+    const widthPx = Math.max(0.4, ((effectiveEnd - effectiveStart) / viewportDuration) * 100);
 
     return (
       <div 
         key={key}
-        title={label}
+        title={`${label} (${new Date(startISO).toISOString().slice(11, 19)} - ${new Date(endISO).toISOString().slice(11, 19)} UTC)`}
         style={{
           position: 'absolute',
           left: `${leftPx}%`,
@@ -300,7 +323,7 @@ export const GanttTimeline = () => {
         }}
       >
         {isLocked && <Lock size={12} style={{marginRight: '4px'}} />}
-        {widthPx > 5 && <span>{label}</span>}
+        {widthPx > 4 && <span>{label}</span>}
       </div>
     );
   };
@@ -519,10 +542,22 @@ export const GanttTimeline = () => {
             const satRes = bySatRes[sat] || [];
             const satPreview = bySatPreview[sat] || [];
 
+            const matchedSat = satellitesList.find(s => s.id === sat || s.id.startsWith(sat));
+            const satNameFromWin = satWindows.find(w => (w as any).satelliteName)?.satelliteName;
+            const satNameFromRes = satRes.find(r => (r as any).satelliteName)?.satelliteName;
+            const satDisplayName = matchedSat?.name || satNameFromWin || satNameFromRes || `SAT-${sat}`;
+
             return (
               <div key={sat} style={{ display: 'flex', marginBottom: '1rem', alignItems: 'stretch' }}>
-                <div style={{ width: '220px', paddingRight: '1rem', display: 'flex', alignItems: 'center', fontWeight: '600' }}>
-                  SAT-{sat}
+                <div style={{ width: '220px', paddingRight: '1rem', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                  <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.9rem' }}>
+                    {satDisplayName}
+                  </div>
+                  {matchedSat?.noradId && (
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                      NORAD {matchedSat.noradId}
+                    </div>
+                  )}
                 </div>
                 
                 <div style={{ flex: 1, position: 'relative', minHeight: '60px', background: 'rgba(255,255,255,0.02)', borderRadius: '4px', border: '1px solid var(--border)' }}>

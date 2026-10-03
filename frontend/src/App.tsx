@@ -1,6 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, ListTodo, Satellite, Clock, Activity, Settings, Zap, Beaker, RotateCcw } from 'lucide-react';
-import { api } from './api/client';
+import { 
+  LayoutDashboard, ListTodo, Satellite, Clock, Activity, Settings, 
+  Zap, Beaker, RotateCcw, Globe, Radio, LogOut, User, Menu, X, 
+  Shield, Server, RefreshCw, CheckCircle2 
+} from 'lucide-react';
+import { api, setAccessToken } from './api/client';
 
 import { Dashboard } from './components/Dashboard';
 import { MissionTasks } from './components/MissionTasks';
@@ -16,12 +20,31 @@ import { Login } from './components/Login';
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isInitializing, setIsInitializing] = useState(true);
+  const [currentUser, setCurrentUser] = useState<{ id: string; email: string; role: string } | null>(null);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [healthStatus, setHealthStatus] = useState<string | null>(null);
+  const [isPinging, setIsPinging] = useState(false);
+
   const [activeTab, setActiveTab] = useState('map');
   const [isScheduling, setIsScheduling] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
   
   const [pendingCount, setPendingCount] = useState<number | null>(null);
   const [lastRunSummary, setLastRunSummary] = useState<any>(null);
+
+  const fetchCurrentUser = async () => {
+    try {
+      const user = await api.get('/auth/me');
+      setCurrentUser(user);
+      setIsAuthenticated(true);
+    } catch {
+      setIsAuthenticated(false);
+      setCurrentUser(null);
+    } finally {
+      setIsInitializing(false);
+    }
+  };
 
   const fetchPendingCount = async () => {
     try {
@@ -34,12 +57,34 @@ function App() {
   };
 
   useEffect(() => {
-    // Check if we have a valid session
-    api.get('/auth/me')
-      .then(() => setIsAuthenticated(true))
-      .catch(() => setIsAuthenticated(false))
-      .finally(() => setIsInitializing(false));
+    fetchCurrentUser();
   }, []);
+
+  const handleLogout = async () => {
+    try {
+      await api.post('/auth/logout', {});
+    } catch (err) {
+      console.warn('Logout failed', err);
+    } finally {
+      setAccessToken(null);
+      setIsAuthenticated(false);
+      setCurrentUser(null);
+    }
+  };
+
+  const handlePingHealth = async () => {
+    setIsPinging(true);
+    try {
+      const start = Date.now();
+      const res = await api.get('/health');
+      const latency = Date.now() - start;
+      setHealthStatus(`ONLINE (${latency}ms) - Database: ${res.database || 'CONNECTED'}`);
+    } catch (e: any) {
+      setHealthStatus(`ERROR: ${e.message}`);
+    } finally {
+      setIsPinging(false);
+    }
+  };
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -117,65 +162,80 @@ function App() {
   }
 
   if (!isAuthenticated) {
-    return <Login onLogin={() => setIsAuthenticated(true)} />;
+    return <Login onLogin={() => { setIsAuthenticated(true); fetchCurrentUser(); }} />;
   }
 
   return (
     <div className="app-container">
+      {/* Mobile Drawer Backdrop */}
+      <div 
+        className={`sidebar-backdrop ${isMobileMenuOpen ? 'open' : ''}`} 
+        onClick={() => setIsMobileMenuOpen(false)} 
+      />
+
       {/* Sidebar Navigation */}
-      <aside className="sidebar" style={{ display: 'flex', flexDirection: 'column' }}>
-        <div style={{ marginBottom: '2rem', padding: '0 0.5rem' }}>
-          <h2 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0 }}>
-            <Zap className="text-gradient" size={24} />
-            <span className="text-gradient">OrbitMesh</span>
-          </h2>
-          <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
-            Adaptive Scheduler
-          </p>
+      <aside className={`sidebar ${isMobileMenuOpen ? 'open' : ''}`} style={{ display: 'flex', flexDirection: 'column' }}>
+        <div style={{ marginBottom: '1.5rem', padding: '0 0.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <h2 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0 }}>
+              <Zap className="text-gradient" size={24} />
+              <span className="text-gradient">OrbitMesh</span>
+            </h2>
+            <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
+              Adaptive Scheduler
+            </p>
+          </div>
+          <button 
+            className="mobile-header-toggle" 
+            onClick={() => setIsMobileMenuOpen(false)}
+            style={{ padding: '0.3rem' }}
+          >
+            <X size={18} />
+          </button>
         </div>
 
         <nav style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-          <div className={`nav-item ${activeTab === 'map' ? 'active' : ''}`} onClick={() => setActiveTab('map')}>
-            <Satellite size={18} /> Orbital Map
+          <div className={`nav-item ${activeTab === 'map' ? 'active' : ''}`} onClick={() => { setActiveTab('map'); setIsMobileMenuOpen(false); }}>
+            <Globe size={18} /> Orbital Map
           </div>
-          <div className={`nav-item ${activeTab === 'dashboard' ? 'active' : ''}`} onClick={() => setActiveTab('dashboard')}>
+          <div className={`nav-item ${activeTab === 'dashboard' ? 'active' : ''}`} onClick={() => { setActiveTab('dashboard'); setIsMobileMenuOpen(false); }}>
             <LayoutDashboard size={18} /> Dashboard
           </div>
-          <div className={`nav-item ${activeTab === 'control-plane' ? 'active' : ''}`} onClick={() => setActiveTab('control-plane')}>
+          <div className={`nav-item ${activeTab === 'control-plane' ? 'active' : ''}`} onClick={() => { setActiveTab('control-plane'); setIsMobileMenuOpen(false); }}>
             <Zap size={18} /> Control Plane
           </div>
-          <div className={`nav-item ${activeTab === 'tasks' ? 'active' : ''}`} onClick={() => setActiveTab('tasks')}>
+          <div className={`nav-item ${activeTab === 'tasks' ? 'active' : ''}`} onClick={() => { setActiveTab('tasks'); setIsMobileMenuOpen(false); }}>
             <ListTodo size={18} /> Mission Tasks
           </div>
-          <div className={`nav-item ${activeTab === 'windows' ? 'active' : ''}`} onClick={() => setActiveTab('windows')}>
-            <Satellite size={18} /> Contact Windows
+          <div className={`nav-item ${activeTab === 'windows' ? 'active' : ''}`} onClick={() => { setActiveTab('windows'); setIsMobileMenuOpen(false); }}>
+            <Radio size={18} /> Contact Windows
           </div>
-          <div className={`nav-item ${activeTab === 'satellites' ? 'active' : ''}`} onClick={() => setActiveTab('satellites')}>
+          <div className={`nav-item ${activeTab === 'satellites' ? 'active' : ''}`} onClick={() => { setActiveTab('satellites'); setIsMobileMenuOpen(false); }}>
             <Satellite size={18} /> Satellite Catalog
           </div>
-          <div className={`nav-item ${activeTab === 'timeline' ? 'active' : ''}`} onClick={() => setActiveTab('timeline')}>
+          <div className={`nav-item ${activeTab === 'timeline' ? 'active' : ''}`} onClick={() => { setActiveTab('timeline'); setIsMobileMenuOpen(false); }}>
             <Clock size={18} /> Reservation Timeline
           </div>
-          <div className={`nav-item ${activeTab === 'inspector' ? 'active' : ''}`} onClick={() => setActiveTab('inspector')}>
+          <div className={`nav-item ${activeTab === 'inspector' ? 'active' : ''}`} onClick={() => { setActiveTab('inspector'); setIsMobileMenuOpen(false); }}>
             <Activity size={18} /> Scheduler Logs
           </div>
-          <div style={{ height: '1px', background: 'var(--border-color)', margin: '1rem 0' }} />
-          <div className={`nav-item ${activeTab === 'experiments' ? 'active' : ''}`} onClick={() => setActiveTab('experiments')}>
+          <div style={{ height: '1px', background: 'var(--border-color)', margin: '0.75rem 0' }} />
+          <div className={`nav-item ${activeTab === 'experiments' ? 'active' : ''}`} onClick={() => { setActiveTab('experiments'); setIsMobileMenuOpen(false); }}>
             <Beaker size={18} /> Experiments
           </div>
         </nav>
 
-        {/* Global Action */}
-        <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+        {/* Global Action & User Session */}
+        <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: '0.75rem', paddingTop: '1rem' }}>
           
           {lastRunSummary && (
-            <div className="glass-panel" style={{ padding: '1rem', fontSize: '0.875rem' }}>
-              <div style={{ fontWeight: 600, marginBottom: '0.5rem', color: 'var(--text-primary)' }}>Scheduler completed</div>
+            <div className="glass-panel" style={{ padding: '0.75rem', fontSize: '0.825rem' }}>
+              <div style={{ fontWeight: 600, marginBottom: '0.35rem', color: 'var(--text-primary)' }}>Scheduler completed</div>
               <div style={{ color: 'var(--success)' }}>{lastRunSummary.scheduled} tasks scheduled</div>
               {lastRunSummary.unscheduled > 0 && (
-                <div style={{ color: 'var(--warning)', marginTop: '0.25rem' }}>
+                <div style={{ color: 'var(--warning)', marginTop: '0.2rem' }}>
                   {lastRunSummary.unscheduled} could not be scheduled
-                  <div style={{ marginTop: '0.5rem', opacity: 0.8 }}>
+                  <div style={{ marginTop: '0.35rem', opacity: 0.8, fontSize: '0.75rem' }}>
                     {Object.entries(lastRunSummary.reasons).map(([reason, count]) => (
                       <div key={reason}>• {count as number} {reason}</div>
                     ))}
@@ -187,43 +247,99 @@ function App() {
 
           <button 
             className={`btn btn-primary ${isScheduling ? 'btn-running' : ''}`}
-            style={{ width: '100%', padding: '0.75rem', opacity: pendingCount === 0 && !isScheduling ? 0.5 : 1 }}
+            style={{ width: '100%', padding: '0.65rem', opacity: pendingCount === 0 && !isScheduling ? 0.5 : 1 }}
             onClick={handleRunScheduler}
             disabled={isScheduling || pendingCount === 0}
           >
             <Zap size={16} fill="currentColor" />
-            {isScheduling ? '⟳ Scheduler running...' : pendingCount === 0 ? '✓ No pending tasks' : 'Run Meta-Scheduler'}
+            {isScheduling ? '⟳ Running...' : pendingCount === 0 ? '✓ No pending tasks' : 'Run Meta-Scheduler'}
           </button>
           
           <button 
             className="btn btn-outline"
-            style={{ width: '100%', padding: '0.75rem', color: 'var(--danger)', borderColor: 'var(--danger)' }}
+            style={{ width: '100%', padding: '0.65rem', color: 'var(--danger)', borderColor: 'var(--danger)' }}
             onClick={handleResetDemo}
             disabled={isResetting || isScheduling}
           >
             <RotateCcw size={16} />
             {isResetting ? 'Resetting...' : 'Reset Demo'}
           </button>
+
+          {/* User Session Profile & Logout */}
+          {currentUser && (
+            <div style={{
+              marginTop: '0.5rem',
+              paddingTop: '0.75rem',
+              borderTop: '1px solid var(--border-color)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.5rem'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                <div style={{
+                  width: '30px',
+                  height: '30px',
+                  borderRadius: '50%',
+                  background: 'rgba(99, 102, 241, 0.2)',
+                  border: '1px solid var(--accent-secondary)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: 'var(--accent-secondary)',
+                  flexShrink: 0
+                }}>
+                  <User size={15} />
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {currentUser.email}
+                  </div>
+                  <div style={{ fontSize: '0.7rem', color: 'var(--accent-secondary)', fontWeight: 500, letterSpacing: '0.04em' }}>
+                    ROLE: {currentUser.role}
+                  </div>
+                </div>
+              </div>
+
+              <button
+                className="btn btn-outline"
+                style={{ width: '100%', padding: '0.45rem', fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem' }}
+                onClick={handleLogout}
+              >
+                <LogOut size={13} /> Sign Out
+              </button>
+            </div>
+          )}
         </div>
       </aside>
 
       {/* Main Content Area */}
       <main className="main-content" style={{ display: 'flex', flexDirection: 'column' }}>
-        <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem', flexShrink: 0 }}>
-          <h1 style={{ margin: 0 }}>
-            {activeTab === 'dashboard' && 'Platform Overview'}
-            {activeTab === 'tasks' && 'Mission Tasks'}
-            {activeTab === 'windows' && 'Contact Windows'}
-            {activeTab === 'timeline' && 'Schedule Timeline'}
-            {activeTab === 'inspector' && 'Scheduler Inspection'}
-            {activeTab === 'satellites' && 'Satellite Catalog'}
-            {activeTab === 'map' && 'Orbital Network Map (Cesium)'}
-            {activeTab === 'experiments' && 'Experiments'}
-          </h1>
+        <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexShrink: 0, gap: '1rem', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <button className="mobile-header-toggle" onClick={() => setIsMobileMenuOpen(true)}>
+              <Menu size={20} />
+            </button>
+            <h1 style={{ margin: 0, fontSize: '1.5rem' }}>
+              {activeTab === 'dashboard' && 'Platform Overview'}
+              {activeTab === 'control-plane' && 'Event Control Plane & Replanning'}
+              {activeTab === 'tasks' && 'Mission Tasks'}
+              {activeTab === 'windows' && 'Contact Windows'}
+              {activeTab === 'timeline' && 'Schedule Timeline'}
+              {activeTab === 'inspector' && 'Scheduler Inspection'}
+              {activeTab === 'satellites' && 'Satellite Catalog'}
+              {activeTab === 'map' && 'Orbital Network Map (Cesium)'}
+              {activeTab === 'experiments' && 'Experiments'}
+            </h1>
+          </div>
           
-          <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
             <span className="badge badge-success">System Online</span>
-            <button className="btn btn-outline" style={{ padding: '0.4rem' }}>
+            <button 
+              className="btn btn-outline" 
+              style={{ padding: '0.45rem', borderRadius: '6px' }}
+              onClick={() => setIsSettingsOpen(true)}
+              title="System Diagnostics & Settings"
+            >
               <Settings size={18} />
             </button>
           </div>
@@ -232,6 +348,7 @@ function App() {
         <main style={{ flex: 1, display: 'flex', flexDirection: 'column', overflowY: 'auto', position: 'relative', zIndex: 10 }}>
           {/* Dynamic component rendering */}
           {activeTab === 'dashboard' && <Dashboard />}
+          {activeTab === 'control-plane' && <ControlPlanePanel />}
           {activeTab === 'tasks' && <MissionTasks />}
           {activeTab === 'windows' && <ContactWindows />}
           {activeTab === 'timeline' && <GanttTimeline />}
@@ -246,6 +363,103 @@ function App() {
           {activeTab === 'experiments' && <Experiments />}
         </main>
       </main>
+
+      {/* System Diagnostics & Settings Modal */}
+      {isSettingsOpen && (
+        <div className="modal-overlay" onClick={() => setIsSettingsOpen(false)}>
+          <div className="modal-dialog" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                <Settings size={20} className="text-gradient" />
+                <h3 style={{ margin: 0, fontSize: '1.1rem' }}>System Diagnostics & Configuration</h3>
+              </div>
+              <button 
+                onClick={() => setIsSettingsOpen(false)}
+                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '1.25rem' }}
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="modal-body">
+              <div>
+                <h4 style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '0.75rem', letterSpacing: '0.05em' }}>
+                  Platform Diagnostics
+                </h4>
+                <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '0.85rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: '0.85rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: 'var(--text-muted)' }}>Core Build</span>
+                    <span className="mono">OrbitMesh v2.4.0 (Phase 5 Certified)</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: 'var(--text-muted)' }}>API Server</span>
+                    <span className="mono">http://localhost:4000/api</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: 'var(--text-muted)' }}>Database</span>
+                    <span className="mono">PostgreSQL 16 · Drizzle ORM Pool Active</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: 'var(--text-muted)' }}>Scheduler Engine</span>
+                    <span className="mono">Hybrid Scoring Meta-Scheduler</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: 'var(--text-muted)' }}>User Session</span>
+                    <span className="mono">{currentUser ? `${currentUser.email} (${currentUser.role})` : 'Anonymous'}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <h4 style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '0.75rem', letterSpacing: '0.05em' }}>
+                  Live Health Check
+                </h4>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+                  <button 
+                    className="btn btn-outline" 
+                    onClick={handlePingHealth}
+                    disabled={isPinging}
+                    style={{ fontSize: '0.8rem', padding: '0.45rem 0.85rem' }}
+                  >
+                    <RefreshCw size={14} className={isPinging ? 'btn-running' : ''} />
+                    {isPinging ? 'Pinging /health...' : 'Ping /health Endpoint'}
+                  </button>
+                  {healthStatus && (
+                    <span style={{ fontSize: '0.825rem', color: healthStatus.startsWith('ONLINE') ? 'var(--success)' : 'var(--danger)', fontFamily: 'var(--font-mono)' }}>
+                      {healthStatus}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <h4 style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '0.75rem', letterSpacing: '0.05em' }}>
+                  Operational Shortcuts
+                </h4>
+                <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                  <button 
+                    className="btn btn-outline"
+                    style={{ fontSize: '0.8rem', padding: '0.45rem 0.85rem', color: 'var(--danger)', borderColor: 'var(--danger)' }}
+                    onClick={() => { setIsSettingsOpen(false); handleResetDemo(); }}
+                  >
+                    <RotateCcw size={14} /> Full Demo Reset
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="modal-footer">
+              <button 
+                className="btn btn-primary" 
+                onClick={() => setIsSettingsOpen(false)}
+                style={{ fontSize: '0.85rem', padding: '0.45rem 1rem' }}
+              >
+                Close Diagnostics
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

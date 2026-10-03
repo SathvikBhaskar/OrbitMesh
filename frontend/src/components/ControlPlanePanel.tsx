@@ -393,7 +393,7 @@ export const ControlPlanePanel: React.FC = () => {
                           </div>
                         )}
                       </td>
-                      <td style={{ padding: '0.75rem 1rem' }} className="mono" style={{ fontSize: '0.75rem' }}>
+                      <td className="mono" style={{ padding: '0.75rem 1rem', fontSize: '0.75rem' }}>
                         {c.activeDispatchId ? (
                           <span style={{ color: '#60a5fa' }}>{c.activeDispatchId}</span>
                         ) : (

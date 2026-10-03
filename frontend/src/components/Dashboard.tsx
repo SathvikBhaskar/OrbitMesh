@@ -8,6 +8,7 @@ export const Dashboard = () => {
     tasks: 0,
     scheduled: 0,
     pending: 0,
+    completed: 0,
     stations: 0,
     satellites: 0,
     reservations: 0
@@ -27,11 +28,14 @@ export const Dashboard = () => {
         ]);
         
         const scheduled = tasks.filter((t: any) => t.status === 'SCHEDULED').length;
+        const pending = tasks.filter((t: any) => t.status === 'PENDING').length;
+        const completed = tasks.filter((t: any) => t.status === 'COMPLETED').length;
         
         setStats({
           tasks: tasks.length,
           scheduled,
-          pending: tasks.length - scheduled,
+          pending,
+          completed,
           reservations: scheduled, // In this model 1 reservation per scheduled task
           stations: stations.length,
           satellites: satellites.length
@@ -69,7 +73,7 @@ export const Dashboard = () => {
       
       {/* Top Metrics Row */}
       <div className="glass-panel" style={{ padding: '1.5rem' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '1.5rem', textAlign: 'center' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: '1.5rem', textAlign: 'center' }}>
           <div>
             <div className="metric-title">Tasks</div>
             <div className="metric-value">{stats.tasks}</div>
@@ -81,6 +85,10 @@ export const Dashboard = () => {
           <div>
             <div className="metric-title">Pending</div>
             <div className="metric-value" style={{ color: 'var(--warning)' }}>{stats.pending}</div>
+          </div>
+          <div>
+            <div className="metric-title">Completed</div>
+            <div className="metric-value" style={{ color: 'var(--accent-secondary)' }}>{stats.completed}</div>
           </div>
           <div>
             <div className="metric-title">Reservations</div>
