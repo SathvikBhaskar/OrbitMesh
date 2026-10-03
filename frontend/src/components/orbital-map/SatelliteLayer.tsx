@@ -1,5 +1,5 @@
 import React from 'react';
-import { Entity, PointGraphics } from 'resium';
+import { Entity, PointGraphics, EllipseGraphics, PolylineGraphics } from 'resium';
 import { Cartesian3, Color } from 'cesium';
 import { SatellitePosition } from './map-types';
 
@@ -27,22 +27,55 @@ export const SatelliteLayer: React.FC<SatelliteLayerProps> = ({
           color = Color.fromCssColorString('#38bdf8'); // High-visibility glowing cyan when selected
         }
 
+        const swathRadiusMeters = isGeo ? 2_500_000 : Math.min(Math.max(sat.altitudeKm * 500, 200_000), 800_000);
+        const satPos = Cartesian3.fromDegrees(sat.longitude, sat.latitude, sat.altitudeKm * 1000);
+        const groundPos = Cartesian3.fromDegrees(sat.longitude, sat.latitude, 0);
+
         return (
-          <Entity
-            key={sat.satelliteId}
-            name={sat.name}
-            position={Cartesian3.fromDegrees(sat.longitude, sat.latitude, sat.altitudeKm * 1000)}
-            description={`NORAD ID: ${sat.noradId}<br>Altitude: ${sat.altitudeKm} km<br>Source: ${sat.source}`}
-            onClick={() => onSelect?.(sat)}
-            onDoubleClick={() => onDoubleClick?.(sat)}
-          >
-            <PointGraphics
-              pixelSize={isSelected ? 16 : (isGeo ? 10 : 8)}
-              color={color}
-              outlineColor={Color.WHITE}
-              outlineWidth={isSelected ? 3.5 : 1.5}
-            />
-          </Entity>
+          <React.Fragment key={sat.satelliteId}>
+            <Entity
+              name={sat.name}
+              position={satPos}
+              description={`NORAD ID: ${sat.noradId}<br>Altitude: ${sat.altitudeKm} km<br>Source: ${sat.source}`}
+              onClick={() => onSelect?.(sat)}
+              onDoubleClick={() => onDoubleClick?.(sat)}
+            >
+              <PointGraphics
+                pixelSize={isSelected ? 16 : (isGeo ? 10 : 8)}
+                color={color}
+                outlineColor={Color.WHITE}
+                outlineWidth={isSelected ? 3.5 : 1.5}
+              />
+            </Entity>
+
+            {/* Smart Focus: Nadir Ground Swath and Sub-Satellite Vector */}
+            {isSelected && (
+              <>
+                <Entity
+                  name={`${sat.name} Nadir Swath`}
+                  position={groundPos}
+                >
+                  <EllipseGraphics
+                    semiMajorAxis={swathRadiusMeters}
+                    semiMinorAxis={swathRadiusMeters}
+                    material={Color.fromCssColorString('rgba(56, 189, 248, 0.16)')}
+                    outline={true}
+                    outlineColor={Color.fromCssColorString('rgba(56, 189, 248, 0.75)')}
+                    outlineWidth={1.5}
+                  />
+                </Entity>
+                <Entity
+                  name={`${sat.name} Nadir Line`}
+                >
+                  <PolylineGraphics
+                    positions={[satPos, groundPos]}
+                    width={1.5}
+                    material={Color.fromCssColorString('rgba(56, 189, 248, 0.45)')}
+                  />
+                </Entity>
+              </>
+            )}
+          </React.Fragment>
         );
       })}
     </>

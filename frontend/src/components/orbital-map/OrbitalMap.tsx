@@ -8,7 +8,7 @@ import { TaskLayer } from './TaskLayer';
 import { SatelliteDetailPanel } from './SatelliteDetailPanel';
 import { SatellitePosition, GroundStation, ContactWindow, MissionTask } from './map-types';
 import { api } from '../../api/client';
-import { Maximize2, Minimize2, ZoomIn, ZoomOut, RotateCcw, Globe } from 'lucide-react';
+import { Maximize2, Minimize2, ZoomIn, ZoomOut, RotateCcw, Globe, Layers, Sun } from 'lucide-react';
 
 export const OrbitalMap: React.FC = () => {
   const [satellites, setSatellites] = useState<SatellitePosition[]>([]);
@@ -30,6 +30,15 @@ export const OrbitalMap: React.FC = () => {
   const [isPivotMode, setIsPivotMode] = useState<boolean>(false);
   const [resetViewTrigger, setResetViewTrigger] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
+
+  // Layer & Constellation Filter State
+  const [orbitFilter, setOrbitFilter] = useState<'ALL' | 'LEO' | 'MEO' | 'GEO'>('ALL');
+  const [showOrbitTracks, setShowOrbitTracks] = useState<boolean>(true);
+  const [showStations, setShowStations] = useState<boolean>(true);
+  const [showContactLinks, setShowContactLinks] = useState<boolean>(true);
+  const [showAllStationCones, setShowAllStationCones] = useState<boolean>(false);
+  const [enableDayNight, setEnableDayNight] = useState<boolean>(false);
+  const [isLayersOpen, setIsLayersOpen] = useState<boolean>(false);
 
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const viewerActionsRef = useRef<CesiumViewerActions | null>(null);
@@ -186,6 +195,13 @@ export const OrbitalMap: React.FC = () => {
     });
   };
 
+  const filteredSatellites = React.useMemo(() => {
+    if (orbitFilter === 'LEO') return satellites.filter(s => s.altitudeKm < 2000);
+    if (orbitFilter === 'MEO') return satellites.filter(s => s.altitudeKm >= 2000 && s.altitudeKm < 30000);
+    if (orbitFilter === 'GEO') return satellites.filter(s => s.altitudeKm >= 30000);
+    return satellites;
+  }, [satellites, orbitFilter]);
+
   return (
     <div
       ref={mapContainerRef}
@@ -193,7 +209,20 @@ export const OrbitalMap: React.FC = () => {
       style={{ display: 'flex', flexDirection: 'column', gap: '1rem', height: '100%' }}
     >
       {/* Header bar */}
-      <div className="glass-panel" style={{ padding: '0.85rem 1.25rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap', flexShrink: 0 }}>
+      <div
+        className="glass-panel"
+        style={{
+          padding: '0.85rem 1.25rem',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '1rem',
+          flexWrap: 'wrap',
+          flexShrink: 0,
+          position: 'relative',
+          zIndex: 200,
+        }}
+      >
         <div>
           <div style={{ fontWeight: 700, fontSize: '0.95rem' }}>Orbital Network (Cesium)</div>
           <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.1rem' }}>
@@ -220,7 +249,7 @@ export const OrbitalMap: React.FC = () => {
               onChange={(e) => handleSatelliteSelectChange(e.target.value)}
             >
               <option value="">-- Choose Satellite --</option>
-              {satellites.map((s) => (
+              {filteredSatellites.map((s) => (
                 <option key={s.satelliteId} value={s.satelliteId}>
                   {s.name} (NORAD {s.noradId})
                 </option>
@@ -237,7 +266,126 @@ export const OrbitalMap: React.FC = () => {
             fontSize: '0.75rem',
             color: 'var(--text-secondary)'
           }}>
-            {satellites.length > 0 ? `${satellites.length} sats · ${stations.length} stations` : 'Loading...'}
+            {filteredSatellites.length > 0 ? `${filteredSatellites.length} sats · ${stations.length} stations` : 'Loading...'}
+          </div>
+
+          {/* Layers & Filters Popover Trigger */}
+          <div style={{ position: 'relative' }}>
+            <button
+              className="btn btn-outline"
+              style={{
+                padding: '0.35rem 0.8rem',
+                fontSize: '0.78rem',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                borderColor: isLayersOpen || orbitFilter !== 'ALL' || enableDayNight ? '#38bdf8' : 'var(--border-color)',
+                background: isLayersOpen ? 'rgba(56, 189, 248, 0.15)' : 'transparent',
+                color: isLayersOpen || orbitFilter !== 'ALL' || enableDayNight ? '#38bdf8' : 'var(--text-secondary)',
+              }}
+              onClick={() => setIsLayersOpen(prev => !prev)}
+              title="Configure map layers, daytime lighting, and orbit filters"
+            >
+              <Layers size={14} /> Layers {orbitFilter !== 'ALL' ? `(${orbitFilter})` : ''}
+            </button>
+
+            {isLayersOpen && (
+              <div
+                className="glass-panel"
+                style={{
+                  position: 'absolute',
+                  top: '120%',
+                  right: 0,
+                  width: '240px',
+                  zIndex: 300,
+                  padding: '0.85rem',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.75rem',
+                  boxShadow: '0 12px 36px rgba(0,0,0,0.85)',
+                  border: '1px solid rgba(56, 189, 248, 0.4)',
+                  background: 'rgba(15, 23, 42, 0.95)',
+                  backdropFilter: 'blur(16px)',
+                  borderRadius: '10px',
+                }}
+              >
+                <div>
+                  <div style={{ fontSize: '0.7rem', color: '#38bdf8', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.4rem', fontWeight: 600 }}>
+                    Orbit Regime Filter
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.3rem' }}>
+                    {(['ALL', 'LEO', 'MEO', 'GEO'] as const).map(regime => (
+                      <button
+                        key={regime}
+                        onClick={() => setOrbitFilter(regime)}
+                        style={{
+                          padding: '0.3rem 0.4rem',
+                          fontSize: '0.72rem',
+                          borderRadius: '5px',
+                          border: orbitFilter === regime ? '1px solid #38bdf8' : '1px solid rgba(255,255,255,0.1)',
+                          background: orbitFilter === regime ? 'rgba(56, 189, 248, 0.25)' : 'rgba(255,255,255,0.04)',
+                          color: orbitFilter === regime ? '#fff' : 'var(--text-muted)',
+                          cursor: 'pointer',
+                          fontWeight: orbitFilter === regime ? 600 : 400,
+                        }}
+                      >
+                        {regime === 'ALL' ? `All (${satellites.length})` : regime}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div style={{ height: '1px', background: 'rgba(255,255,255,0.1)' }} />
+
+                <div>
+                  <div style={{ fontSize: '0.7rem', color: '#38bdf8', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.4rem', fontWeight: 600 }}>
+                    Map Layers
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem', fontSize: '0.78rem' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', color: '#fff' }}>
+                      <input
+                        type="checkbox"
+                        checked={showOrbitTracks}
+                        onChange={e => setShowOrbitTracks(e.target.checked)}
+                      />
+                      Orbit Tracks
+                    </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', color: '#fff' }}>
+                      <input
+                        type="checkbox"
+                        checked={showStations}
+                        onChange={e => setShowStations(e.target.checked)}
+                      />
+                      Ground Stations
+                    </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', color: '#fff' }}>
+                      <input
+                        type="checkbox"
+                        checked={showContactLinks}
+                        onChange={e => setShowContactLinks(e.target.checked)}
+                      />
+                      Contact Links
+                    </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', color: '#fff' }}>
+                      <input
+                        type="checkbox"
+                        checked={showAllStationCones}
+                        onChange={e => setShowAllStationCones(e.target.checked)}
+                      />
+                      All Station Cones
+                    </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', color: '#fff' }}>
+                      <input
+                        type="checkbox"
+                        checked={enableDayNight}
+                        onChange={e => setEnableDayNight(e.target.checked)}
+                      />
+                      Day / Night Sun Light
+                    </label>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Return to default view button */}
@@ -443,36 +591,46 @@ export const OrbitalMap: React.FC = () => {
           <CesiumViewer
             flyToTarget={flyTarget}
             resetViewTrigger={resetViewTrigger}
+            enableLighting={enableDayNight}
             onViewerReady={handleViewerReady}
           >
-            <OrbitTrackLayer 
-              satellites={satellites} 
-              selectedSatelliteId={selectedEntity && 'noradId' in selectedEntity ? selectedEntity.satelliteId : undefined} 
-            />
+            {showOrbitTracks && (
+              <OrbitTrackLayer 
+                satellites={filteredSatellites} 
+                selectedSatelliteId={selectedEntity && 'noradId' in selectedEntity ? selectedEntity.satelliteId : undefined} 
+              />
+            )}
             <SatelliteLayer 
-              satellites={satellites} 
+              satellites={filteredSatellites} 
               selectedSatelliteId={selectedEntity && 'noradId' in selectedEntity ? selectedEntity.satelliteId : undefined}
               onSelect={handleEntitySelect}
               onDoubleClick={handleEntityDoubleClick}
             />
-            <GroundStationLayer 
-              stations={stations} 
-              selectedStationId={selectedEntity && !('noradId' in selectedEntity) ? selectedEntity.id : undefined}
-              onSelect={handleEntitySelect}
-              onDoubleClick={handleEntityDoubleClick}
-            />
-            <ContactWindowLayer 
-              windows={windows} 
-              satellites={satellites} 
-              stations={stations} 
-              selectedSatelliteId={selectedEntity && 'noradId' in selectedEntity ? selectedEntity.satelliteId : undefined}
-            />
-            <TaskLayer tasks={tasks} satellites={satellites} />
+            {showStations && (
+              <GroundStationLayer 
+                stations={stations} 
+                selectedStationId={selectedEntity && !('noradId' in selectedEntity) ? selectedEntity.id : undefined}
+                showAllFootprints={showAllStationCones}
+                onSelect={handleEntitySelect}
+                onDoubleClick={handleEntityDoubleClick}
+              />
+            )}
+            {showContactLinks && (
+              <ContactWindowLayer 
+                windows={windows} 
+                satellites={filteredSatellites} 
+                stations={stations} 
+                selectedSatelliteId={selectedEntity && 'noradId' in selectedEntity ? selectedEntity.satelliteId : undefined}
+              />
+            )}
+            <TaskLayer tasks={tasks} satellites={filteredSatellites} />
           </CesiumViewer>
         </div>
         <div style={{ width: '280px', flexShrink: 0 }}>
           <SatelliteDetailPanel
             selected={selectedEntity}
+            windows={windows}
+            stations={stations}
             isPivotMode={isPivotMode}
             onTogglePivot={handleTogglePivot}
             onClose={handleResetView}

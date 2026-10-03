@@ -47,6 +47,7 @@ export interface CesiumViewerProps {
     name?: string;
   } | null;
   resetViewTrigger?: number;
+  enableLighting?: boolean;
   onViewerReady?: (actions: CesiumViewerActions) => void;
 }
 
@@ -63,8 +64,9 @@ const CesiumGlobeInitializer: React.FC<{
     name?: string;
   } | null;
   resetViewTrigger?: number;
+  enableLighting?: boolean;
   onViewerReady?: (actions: CesiumViewerActions) => void;
-}> = ({ flyToTarget, resetViewTrigger, onViewerReady }) => {
+}> = ({ flyToTarget, resetViewTrigger, enableLighting, onViewerReady }) => {
   const { viewer } = useCesium();
 
   useEffect(() => {
@@ -73,7 +75,7 @@ const CesiumGlobeInitializer: React.FC<{
 
     // Atmospheric and globe aesthetics: natural space contrast & realistic Earth glow
     viewer.scene.globe.baseColor = Color.fromCssColorString('#020b14');
-    viewer.scene.globe.enableLighting = false; // Uniform illumination across the entire globe
+    viewer.scene.globe.enableLighting = Boolean(enableLighting);
     viewer.scene.globe.showGroundAtmosphere = true;
 
     viewer.scene.skyAtmosphere.show = true;
@@ -281,6 +283,11 @@ const CesiumGlobeInitializer: React.FC<{
     }
   }, [flyToTarget, viewer]);
 
+  useEffect(() => {
+    if (!viewer || viewer.isDestroyed()) return;
+    viewer.scene.globe.enableLighting = Boolean(enableLighting);
+  }, [enableLighting, viewer]);
+
   return null;
 };
 
@@ -288,6 +295,7 @@ export const CesiumViewer: React.FC<CesiumViewerProps> = ({
   children,
   flyToTarget,
   resetViewTrigger,
+  enableLighting,
   onViewerReady
 }) => {
   return (
@@ -309,6 +317,7 @@ export const CesiumViewer: React.FC<CesiumViewerProps> = ({
       <CesiumGlobeInitializer
         flyToTarget={flyToTarget}
         resetViewTrigger={resetViewTrigger}
+        enableLighting={enableLighting}
         onViewerReady={onViewerReady}
       />
       {children}
