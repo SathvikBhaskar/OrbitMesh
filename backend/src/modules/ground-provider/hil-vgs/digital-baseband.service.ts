@@ -151,9 +151,9 @@ export class DigitalBasebandService {
       };
     }
 
-    // Theoretical bit error rate from SNR (assuming BPSK/QPSK AWGN channel)
-    // SNR_linear = 10^(snrDb / 10)
-    // BER ~ 0.5 * erfc(sqrt(SNR_linear))
+    // Theoretical bit error rate model: assumes coherent BPSK over AWGN with snrDb interpreted as Eb/N0.
+    // In coherent BPSK over AWGN: BER = 0.5 * erfc(sqrt(Eb/N0))
+    // For deterministic simulation, we bound the tail probability via 0.5 * exp(-Eb/N0_linear)
     const snrLinear = Math.pow(10, snrDb / 10);
     const ber = snrDb <= 0 ? 0.5 : Math.max(1e-9, 0.5 * Math.exp(-snrLinear));
     const frameLossProb = 1 - Math.pow(1 - ber, DigitalBasebandService.CADU_FRAME_SIZE * 8);

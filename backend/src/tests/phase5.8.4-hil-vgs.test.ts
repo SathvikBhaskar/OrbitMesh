@@ -1,10 +1,10 @@
 /**
- * Phase 5.8: Workstream 5.8.4 — Hardware-in-the-Loop (HIL) & Virtual Ground Station (VGS)
+ * Phase 5.8: Workstream 5.8.4 — Virtual Ground Station (VGS) / HIL Software Simulation
  * 
  * Verifies:
- * 1. Digital Baseband Simulation (VITA 49, CCSDS CADU, Frame Sync Engine, BER/FER noise modeling)
- * 2. SDR Physical Channel Emulation (Doppler S-curve, Slant Range, FSPL, Atmospheric loss, Carrier Lock)
- * 3. Physical Carrier-Silencing Interlock under Channel Backlog / Saturation
+ * 1. Digital Baseband Simulation (VITA 49-style packetizer, CCSDS CADU framing simulation, Sync FSM, BPSK AWGN BER/FER model)
+ * 2. Deterministic LEO RF Channel Emulation (Doppler S-curve, Slant Range, FSPL 1/R^2, Atmospheric loss, Carrier Lock)
+ * 3. Simulated Carrier-Silencing Interlock under Channel Backlog / Saturation
  * 4. 5.8.1 Certification Conformance for Virtual Ground Station (16/16 assertions)
  * 5. Full End-to-End Pipeline: Mission -> Scheduler -> Control Plane -> Outbox -> VGS Adapter -> Telemetry -> Safety
  */
@@ -245,9 +245,9 @@ describe("Phase 5.8.4: Hardware-in-the-Loop (HIL) & Virtual Ground Station (VGS)
   });
 
   // =========================================================================
-  // 2. SDR Physical Channel Emulation
+  // 2. Deterministic LEO RF Channel Emulation
   // =========================================================================
-  describe("2. SDR Physical Channel Emulation & Space-to-Ground Physics", () => {
+  describe("2. Deterministic LEO RF Channel Emulation & Space-to-Ground Propagation", () => {
     it("computes Doppler frequency S-curve: positive at AOS, zero at Zenith, negative at LOS", () => {
       // AOS (-1.0): satellite approaching -> positive Doppler shift
       const aosSnapshot = channel.evaluateChannelAtProgress(-1.0);
@@ -307,10 +307,10 @@ describe("Phase 5.8.4: Hardware-in-the-Loop (HIL) & Virtual Ground Station (VGS)
   });
 
   // =========================================================================
-  // 3. Physical Carrier-Silencing Interlock Validation
+  // 3. Simulated Carrier-Silencing Interlock Validation
   // =========================================================================
-  describe("3. Physical Carrier-Silencing Interlock under Channel Saturation", () => {
-    it("actuates physical RF switch instantly (<50ms), clamping RF power to noise floor (-110 dBm)", () => {
+  describe("3. Simulated Carrier-Silencing Interlock under Channel Saturation", () => {
+    it("simulates instant RF carrier silencing (<50ms execution bound), clamping RF power to noise floor (-110 dBm)", () => {
       // 1. Stage and arm pass in VGS
       vgs.stagePass({
         dispatchId: "disp-silence-01",
@@ -375,7 +375,7 @@ describe("Phase 5.8.4: Hardware-in-the-Loop (HIL) & Virtual Ground Station (VGS)
       expect(postBytes).toBe(preBytes); // Transmission completely frozen
     });
 
-    it("generates cryptographically signed telemetry proving physical RF carrier is silenced", async () => {
+    it("generates cryptographically signed telemetry verifying simulated RF carrier is silenced", async () => {
       vgs.stagePass({
         dispatchId: "disp-telem-01",
         satelliteId: satId,

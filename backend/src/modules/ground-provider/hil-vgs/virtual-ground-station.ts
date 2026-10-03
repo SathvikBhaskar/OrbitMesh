@@ -158,8 +158,8 @@ export class VirtualGroundStation {
   }
 
   /**
-   * Emergency Physical Carrier Silencing Interlock (§5.1, §5.3, §5.8.4)
-   * Actuates solid-state RF switch directly, clamping output power to noise floor (<50ms).
+   * Emergency Carrier Silencing Interlock Simulation (§5.1, §5.3, §5.8.4)
+   * Simulates immediate solid-state RF switch actuation, clamping modeled output power to noise floor (<50ms execution bound).
    */
   public emergencySilenceCarrier(reason: string): {
     silenced: boolean;
@@ -173,7 +173,7 @@ export class VirtualGroundStation {
 
     logger.warn(
       { stationCode: this.stationCode, reason, silencedAt: silencedAt.toISOString() },
-      "[VGS_INTERLOCK] Physical carrier silenced via hardware RF switch: RF output clamped to -110 dBm"
+      "[VGS_INTERLOCK] Simulated carrier silenced: RF state clamped to -110 dBm"
     );
 
     return {
