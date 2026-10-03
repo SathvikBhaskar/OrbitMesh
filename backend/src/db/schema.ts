@@ -573,7 +573,7 @@ export const groundStationCredentials = pgTable(
       .notNull()
       .references(() => groundStations.id, { onDelete: "cascade" }),
     keyId: varchar("key_id", { length: 64 }).notNull().unique(),
-    secretKey: varchar("secret_key", { length: 255 }).notNull(),
+    secretKey: text("secret_key").notNull(),
     status: stationCredentialStatusEnum("status").default("ACTIVE").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),

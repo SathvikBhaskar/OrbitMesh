@@ -7,6 +7,8 @@ import {
   SignatureVerificationResult,
 } from "./provider.types";
 import { logger } from "../../config/logger";
+import { keyRotationService } from "./security/key-rotation.service";
+import { kmsKeyCustodyService } from "./security/kms-key-custody.service";
 
 export class GroundSecurityService {
   public static readonly MAX_TIMESTAMP_SKEW_MS = 5000; // ±5 seconds
@@ -124,7 +126,19 @@ export class GroundSecurityService {
       };
     }
 
-    if (cred.expiresAt && cred.expiresAt.getTime() < now) {
+    if (cred.status === "ROTATING") {
+      const evaluation = keyRotationService.evaluateKeyUsability(cred, new Date(now));
+      if (!evaluation.isUsable) {
+        logger.warn({ keyId, stationId: cred.groundStationId }, "Telemetry rejected: key rotation grace exceeded");
+        return {
+          isValid: false,
+          stationId: cred.groundStationId,
+          keyId,
+          errorCode: evaluation.errorCode ?? "ROTATION_GRACE_EXCEEDED",
+          errorMessage: evaluation.errorMessage ?? `Key ${keyId} rotation grace period expired`,
+        };
+      }
+    } else if (cred.expiresAt && cred.expiresAt.getTime() < now) {
       logger.warn({ keyId, stationId: cred.groundStationId }, "Telemetry rejected: key has EXPIRED");
       return {
         isValid: false,
@@ -135,7 +149,33 @@ export class GroundSecurityService {
       };
     }
 
-    // 5. Signature verification (constant-time compare)
+    // 5. Decrypt secret key if envelope-encrypted
+    let activeSecret = cred.secretKey;
+    if (activeSecret.startsWith("enc:")) {
+      try {
+        const envelope = JSON.parse(activeSecret.slice(4));
+        activeSecret = await kmsKeyCustodyService.decryptSecret(
+          envelope,
+          {
+            stationId: cred.groundStationId,
+            keyId: cred.keyId,
+            purpose: "TELEMETRY_SIGNING",
+          },
+          "crypto-service"
+        );
+      } catch (err) {
+        logger.error({ keyId, err }, "Failed to decrypt envelope-encrypted ground station secret");
+        return {
+          isValid: false,
+          stationId: cred.groundStationId,
+          keyId,
+          errorCode: "INVALID_SIGNATURE",
+          errorMessage: "Unable to decrypt key envelope",
+        };
+      }
+    }
+
+    // 6. Signature verification (constant-time compare)
     const canonical = this.buildCanonicalString(
       dispatchId,
       sequenceNumber,
@@ -144,7 +184,7 @@ export class GroundSecurityService {
       payload
     );
 
-    const expectedSig = this.generateSignature(cred.secretKey, canonical);
+    const expectedSig = this.generateSignature(activeSecret, canonical);
 
     try {
       const sigBuffer = Buffer.from(signature, "hex");

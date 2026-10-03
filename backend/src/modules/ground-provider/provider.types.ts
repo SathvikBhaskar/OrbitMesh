@@ -81,6 +81,7 @@ export interface SignatureVerificationResult {
     | "CREDENTIAL_REVOKED"
     | "CREDENTIAL_EXPIRED"
     | "CLOCK_SKEW_EXCEEDED"
-    | "NONCE_REPLAY_DETECTED";
+    | "NONCE_REPLAY_DETECTED"
+    | "ROTATION_GRACE_EXCEEDED";
   readonly errorMessage?: string;
 }
