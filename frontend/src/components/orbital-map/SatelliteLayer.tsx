@@ -1,11 +1,12 @@
 import React from 'react';
-import { Entity, PointGraphics, EllipseGraphics, PolylineGraphics } from 'resium';
+import { Entity, PointGraphics, EllipseGraphics, PolylineGraphics, ModelGraphics } from 'resium';
 import { Cartesian3, Color } from 'cesium';
 import { SatellitePosition } from './map-types';
 
 interface SatelliteLayerProps {
   satellites: SatellitePosition[];
   selectedSatelliteId?: string;
+  isPivotMode?: boolean;
   onSelect?: (sat: SatellitePosition) => void;
   onDoubleClick?: (sat: SatellitePosition) => void;
 }
@@ -13,6 +14,7 @@ interface SatelliteLayerProps {
 export const SatelliteLayer: React.FC<SatelliteLayerProps> = ({
   satellites,
   selectedSatelliteId,
+  isPivotMode = false,
   onSelect,
   onDoubleClick
 }) => {
@@ -40,12 +42,22 @@ export const SatelliteLayer: React.FC<SatelliteLayerProps> = ({
               onClick={() => onSelect?.(sat)}
               onDoubleClick={() => onDoubleClick?.(sat)}
             >
-              <PointGraphics
-                pixelSize={isSelected ? 16 : (isGeo ? 10 : 8)}
-                color={color}
-                outlineColor={Color.WHITE}
-                outlineWidth={isSelected ? 3.5 : 1.5}
-              />
+              {isSelected && isPivotMode ? (
+                <ModelGraphics
+                  uri="/models/satellite.gltf"
+                  minimumPixelSize={110}
+                  maximumScale={50000}
+                  scale={3500}
+                  runAnimations={true}
+                />
+              ) : (
+                <PointGraphics
+                  pixelSize={isSelected ? 16 : (isGeo ? 10 : 8)}
+                  color={color}
+                  outlineColor={Color.WHITE}
+                  outlineWidth={isSelected ? 3.5 : 1.5}
+                />
+              )}
             </Entity>
 
             {/* Smart Focus: Nadir Ground Swath and Sub-Satellite Vector */}

@@ -672,6 +672,7 @@ export const OrbitalMap: React.FC = () => {
             <SatelliteLayer 
               satellites={filteredSatellites} 
               selectedSatelliteId={selectedEntity && 'noradId' in selectedEntity ? selectedEntity.satelliteId : undefined}
+              isPivotMode={isPivotMode}
               onSelect={handleEntitySelect}
               onDoubleClick={handleEntityDoubleClick}
             />
